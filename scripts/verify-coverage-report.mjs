@@ -6,20 +6,20 @@ const report = JSON.parse(
     "utf8"
   )
 );
-const frontendEntries = Object.entries(report).filter(([file]) =>
-  file.includes("/packages/control-plane/client/src/")
+const sourceEntries = Object.entries(report).filter(([file]) =>
+  file.includes("/packages/")
 );
-const coveredFrontendStatements = frontendEntries.reduce(
+const coveredStatements = sourceEntries.reduce(
   (count, [, coverage]) =>
     count + Object.values(coverage.s).filter((hits) => hits > 0).length,
   0
 );
 
-if (frontendEntries.length === 0 || coveredFrontendStatements === 0) {
-  console.error("Aggregate coverage contains no covered frontend source.");
+if (sourceEntries.length === 0 || coveredStatements === 0) {
+  console.error("Aggregate coverage contains no covered package source.");
   process.exit(1);
 }
 
 console.log(
-  `Aggregate coverage includes ${frontendEntries.length} frontend files with ${coveredFrontendStatements} covered statements.`
+  `Aggregate coverage includes ${sourceEntries.length} package files with ${coveredStatements} covered statements.`
 );

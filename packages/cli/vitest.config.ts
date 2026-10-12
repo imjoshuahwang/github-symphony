@@ -10,26 +10,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@gh-symphony/management-agent": resolve(
-        packageRoot,
-        "../management-agent/src/index.ts"
-      ),
-      "@gh-symphony/management-protocol": resolve(
-        packageRoot,
-        "../management-protocol/src/index.ts"
-      ),
-      "@gh-symphony/control-plane": resolve(
-        packageRoot,
-        "../control-plane/src/index.ts"
-      ),
       "@gh-symphony/core": resolve(packageRoot, "../core/src/index.ts"),
       "@gh-symphony/dashboard": resolve(
         packageRoot,
         "../dashboard/src/index.ts"
-      ),
-      "@gh-symphony/extension-github-workflow": resolve(
-        packageRoot,
-        "../extension-github-workflow/src/index.ts"
       ),
       "@gh-symphony/orchestrator": resolve(
         packageRoot,

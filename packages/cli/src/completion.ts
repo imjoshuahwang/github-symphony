@@ -2,7 +2,6 @@ const TOP_LEVEL_COMMANDS = [
   "workflow",
   "setup",
   "doctor",
-  "upgrade",
   "project",
   "config",
   "completion",
@@ -55,7 +54,6 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
     "--issue",
     ...GLOBAL_OPTIONS,
   ],
-  upgrade: [...GLOBAL_OPTIONS],
   project: ["list", "start", "status", "stop"],
   "project:list": [...GLOBAL_OPTIONS],
   "project:start": [
@@ -66,7 +64,6 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
     "--assigned-only",
     "--port",
     "--http",
-    "--web",
     "--bind-all",
     "--log-level",
     ...GLOBAL_OPTIONS,

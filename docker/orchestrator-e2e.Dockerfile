@@ -33,19 +33,10 @@ COPY --from=build --chown=node:node /app/package.json /app/package.json
 # Copy compiled stub worker
 COPY --from=build --chown=node:node /app/e2e-compiled/stub-worker.js /app/e2e/stub-worker.js
 COPY --from=build --chown=node:node /app/e2e/host-dynamic-tool-e2e.mjs /app/e2e/host-dynamic-tool-e2e.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-enrollment-server.mjs /app/e2e/fleet-enrollment-server.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-enrollment-e2e.mjs /app/e2e/fleet-enrollment-e2e.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-enrollment-mutations.mjs /app/e2e/fleet-enrollment-mutations.mjs
 COPY --from=build --chown=node:node /app/e2e/expected-target-stop.mjs /app/e2e/expected-target-stop.mjs
-COPY --from=build --chown=node:node /app/e2e/management-agent-contract.mjs /app/e2e/management-agent-contract.mjs
-
-COPY --from=build --chown=node:node /app/e2e/bounded-read-contract.mjs /app/e2e/bounded-read-contract.mjs
 
 # OTLP lifecycle contract uses built service/providers, not Vitest mocks.
 COPY --from=build --chown=node:node /app/e2e/otlp-lifecycle-contract.mjs /app/e2e/otlp-lifecycle-contract.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-commands-peer.mjs /app/e2e/fleet-commands-peer.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-commands-e2e.mjs /app/e2e/fleet-commands-e2e.mjs
-COPY --from=build --chown=node:node /app/e2e/fleet-commands-mutations.mjs /app/e2e/fleet-commands-mutations.mjs
 
 # Copy seed data
 COPY --chown=node:node e2e/seed /e2e/seed

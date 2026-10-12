@@ -110,42 +110,13 @@ describe("Commander CLI entrypoint", () => {
     const stdout = captureWrites(process.stdout);
 
     try {
-      await runCli(["repo", "list", "--version"]);
+      await runCli(["project", "list", "--version"]);
     } finally {
       stdout.restore();
     }
 
     expect(stdout.output()).toContain("gh-symphony v");
   });
-
-  it.each([
-    ["init"],
-    ["start", "--daemon"],
-    ["stop"],
-    ["status"],
-    ["run", "owner/repo#1"],
-    ["recover"],
-    ["logs"],
-    ["explain", "owner/repo#1"],
-    ["anything"],
-    ["--help"],
-  ])(
-    "retires repo %s with the project migration instruction",
-    async (...args) => {
-      const stderr = captureWrites(process.stderr);
-      try {
-        await runCli(["repo", ...args]);
-      } finally {
-        stderr.restore();
-      }
-
-      expect(process.exitCode).toBe(2);
-      expect(stderr.output()).toBe(
-        "The 'repo' command has been removed. Use 'gh-symphony project start --project-dir <path>'.\n" +
-          "Migration: packages/cli/README.md#repository-command-migration\n"
-      );
-    }
-  );
 
   it("prints completion scripts from the CLI", async () => {
     const stdout = captureWrites(process.stdout);
@@ -158,41 +129,8 @@ describe("Commander CLI entrypoint", () => {
 
     const output = stdout.output();
     expect(output).toContain("complete -F _gh_symphony_completion gh-symphony");
-    expect(output).toContain("workflow setup doctor upgrade project");
+    expect(output).toContain("workflow setup doctor project");
   });
-
-  it.each([
-    [["init"], "Use 'gh-symphony workflow init'."],
-    [["start"], "Use 'gh-symphony project start --project-dir <path>'."],
-    [["stop"], "Use 'gh-symphony project stop --project-dir <path>'."],
-    [["status"], "Use 'gh-symphony project status --project-dir <path>'."],
-    [
-      ["run", "owner/repo#1"],
-      "The 'run' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    ],
-    [
-      ["recover"],
-      "The 'recover' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    ],
-    [
-      ["logs"],
-      "The 'logs' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    ],
-  ])(
-    "reports the migration path for removed top-level command %s",
-    async (args, message) => {
-      const stderr = captureWrites(process.stderr);
-
-      try {
-        await runCli(args);
-      } finally {
-        stderr.restore();
-      }
-
-      expect(stderr.output()).toBe(`${message}\n`);
-      expect(process.exitCode).toBe(2);
-    }
-  );
 
   it("reports a missing root config argument", async () => {
     const stderr = captureWrites(process.stderr);
@@ -226,7 +164,6 @@ describe("Commander CLI entrypoint", () => {
     expect(output).toContain("workflow init");
     expect(output).toContain("setup");
     expect(output).toContain("doctor");
-    expect(output).toContain("upgrade");
     expect(output).toContain("completion");
     expect(output).not.toContain("\n  init ");
     expect(output).not.toContain("\n  start ");
@@ -273,24 +210,9 @@ describe("Commander CLI entrypoint", () => {
     expect(output).toContain("--bind-all");
     expect(output).toContain("--port [port]");
     expect(output).toContain("--http [port]");
-    expect(output).toContain("--web [port]");
+    expect(output).not.toContain("--web");
     expect(output).toContain("--log-level <level>");
     expect(output).toContain("--project-dir <path>");
-  });
-
-  it("guides users of the removed instances command", async () => {
-    const stderr = captureWrites(process.stderr);
-
-    try {
-      await runCli(["instances"]);
-    } finally {
-      stderr.restore();
-    }
-
-    expect(stderr.output()).toContain(
-      "Use 'gh-symphony project list' and 'gh-symphony project status --project-dir <path>'."
-    );
-    expect(process.exitCode).toBe(2);
   });
 
   it("rejects misspelled standalone project runtime options", async () => {

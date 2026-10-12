@@ -34,8 +34,8 @@ describe("completion renderer", () => {
   it("renders bash completion with top-level commands", () => {
     const output = renderCompletionScript("bash");
     expect(output).toContain("complete -F _gh_symphony_completion gh-symphony");
-    expect(output).toContain("workflow setup doctor upgrade");
-    expect(output).not.toContain("upgrade start stop status");
+    expect(output).toContain("workflow setup doctor project");
+    expect(output).not.toContain("upgrade");
     expect(output).toContain("workflow:init");
     expect(output).toContain("project config completion");
     expect(output).toContain("setup)");

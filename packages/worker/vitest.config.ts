@@ -8,10 +8,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@gh-symphony/core": resolve(packageRoot, "../core/src/index.ts"),
-      "@gh-symphony/extension-github-workflow": resolve(
-        packageRoot,
-        "../extension-github-workflow/src/index.ts"
-      ),
       "@gh-symphony/runtime-claude": resolve(
         packageRoot,
         "../runtime-claude/src/index.ts"

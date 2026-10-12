@@ -77,10 +77,6 @@ export const HELP_SECTIONS: HelpSection[] = [
     title: "Maintenance",
     entries: [
       {
-        name: "upgrade",
-        description: "Upgrade the CLI to the latest published version",
-      },
-      {
         name: "completion <shell>",
         description: "Print shell completion (bash/zsh/fish)",
       },
