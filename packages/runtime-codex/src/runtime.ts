@@ -7,7 +7,6 @@ import {
   buildAgentChildEnvironmentAssignments,
   buildAgentInputRequiredReason,
   CUSTOM_RUNTIME_RESERVED_AUTH_ENVIRONMENT_NAMES,
-  DEFAULT_LINEAR_GRAPHQL_URL,
   prepareAgentChildHome,
   resolveAgentChildHome,
   stageDockerCliPlugins,
@@ -20,7 +19,6 @@ import {
   type AgentRuntimeEvent,
 } from "@gh-symphony/core";
 import { createGitHubGraphQLMcpServerEntry } from "@gh-symphony/tool-github-graphql";
-import { createLinearGraphQLMcpServerEntry } from "@gh-symphony/tool-linear-graphql";
 
 const DEFAULT_GITHUB_GIT_HOST = "github.com";
 const DEFAULT_GITHUB_GIT_USERNAME = "x-access-token";
@@ -78,10 +76,6 @@ export type CodexRuntimeConfig = {
   agentEnv?: Record<string, string>;
   githubProjectId?: string;
   githubGraphqlApiUrl?: string;
-  enableLinearGraphqlTool?: boolean;
-  linearApiKey?: string;
-  linearAuthorization?: string;
-  linearGraphqlUrl?: string;
   extraEnv?: NodeJS.ProcessEnv;
   /** Command line to launch codex app-server. Parsed into argv and spawned without a shell. */
   agentCommand?: string;
@@ -190,43 +184,6 @@ export function createGitHubGraphQLToolDefinition(
         query: {
           type: "string",
           description: "GraphQL query or mutation document.",
-        },
-        variables: {
-          type: "object",
-          description: "Variables for the GraphQL document.",
-        },
-        operationName: {
-          type: "string",
-          description: "Optional GraphQL operation name.",
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
-  };
-}
-
-export function createLinearGraphQLToolDefinition(
-  config: Pick<
-    CodexRuntimeConfig,
-    "linearGraphqlUrl" | "linearAuthorization" | "linearApiKey"
-  >
-): RuntimeToolDefinition {
-  const entry = createLinearGraphQLMcpServerEntry(config);
-
-  return {
-    name: "linear_graphql",
-    description:
-      "Execute a single Linear GraphQL query or mutation for the active Linear issue using runtime-managed auth.",
-    command: entry.command,
-    args: entry.args,
-    env: entry.env,
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Single GraphQL query or mutation document.",
         },
         variables: {
           type: "object",
@@ -573,16 +530,7 @@ export function buildCodexRuntimePlan(
     ...config,
     githubToken: config.githubToken,
   });
-  const linearTool = config.enableLinearGraphqlTool
-    ? createLinearGraphQLToolDefinition({
-        linearGraphqlUrl: config.linearGraphqlUrl ?? DEFAULT_LINEAR_GRAPHQL_URL,
-        linearAuthorization: config.linearAuthorization,
-        linearApiKey: config.linearApiKey,
-      })
-    : undefined;
-  const builtinTools = [githubTool, linearTool].filter(
-    (tool): tool is RuntimeToolDefinition => tool !== undefined
-  );
+  const builtinTools = [githubTool];
   const secretEnvironmentNames = [
     ...(config.trackerSecretEnvironmentNames ?? []),
     ...collectMcpSecretEnvironmentNames({
@@ -632,7 +580,6 @@ export function buildCodexRuntimePlan(
   const removedEnvironmentNames = new Set([
     ...secretEnvironmentNames,
     ...CUSTOM_RUNTIME_RESERVED_AUTH_ENVIRONMENT_NAMES,
-    "LINEAR_GRAPHQL_URL",
   ]);
   for (const name of removedEnvironmentNames) {
     delete plan.env[name];

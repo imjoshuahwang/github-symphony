@@ -33,22 +33,6 @@ workspace:
 ---
 Implement the issue.`;
 
-const linearWorkflow = `---
-tracker:
-  kind: linear
-  provider:
-    project_slug: symphony
-    pickup_labels:
-      include: [team-a]
-      exclude: [skip]
-  active_states: [" Todo "]
-codex:
-  command: codex app-server
-repository:
-  slug: acme/platform
----
-Implement the issue.`;
-
 const fileWorkflowWithoutProviderPath = `---
 tracker:
   kind: file
@@ -296,37 +280,6 @@ describe("deriveStandaloneProject", () => {
         delete (process.stdin as { isTTY?: boolean }).isTTY;
       }
     }
-  });
-
-  it("preserves Linear label filters and normalizes overlapping states and labels", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "cli-standalone-config-"));
-    const first = await mkdtemp(join(tmpdir(), "cli-standalone-project-"));
-    const second = await mkdtemp(join(tmpdir(), "cli-standalone-project-"));
-    await Promise.all([
-      writeFile(join(first, "WORKFLOW.md"), linearWorkflow, "utf8"),
-      writeFile(
-        join(second, "WORKFLOW.md"),
-        linearWorkflow
-          .replace(" Todo ", "todo")
-          .replace("team-a", '" Team-A "'),
-        "utf8"
-      ),
-    ]);
-
-    const project = await deriveStandaloneProject(first, { configDir });
-
-    await expect(
-      loadProjectConfig(configDir, project.projectId)
-    ).resolves.toMatchObject({
-      tracker: {
-        settings: {
-          pickupLabels: { include: ["team-a"], exclude: ["skip"] },
-        },
-      },
-    });
-    await expect(
-      deriveStandaloneProject(second, { configDir })
-    ).rejects.toThrow("Tracker mapping overlaps project(s)");
   });
 
   it("lists standalone projects that have been derived", async () => {

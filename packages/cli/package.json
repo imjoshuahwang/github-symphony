@@ -54,7 +54,6 @@
     "@gh-symphony/runtime-codex": "workspace:*",
     "@gh-symphony/tracker-github": "workspace:*",
     "@gh-symphony/tool-github-graphql": "workspace:*",
-    "@gh-symphony/tool-linear-graphql": "workspace:*",
     "@gh-symphony/worker": "workspace:*",
     "tsup": "^8.5.1"
   }

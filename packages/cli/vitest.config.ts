@@ -31,10 +31,6 @@ export default defineConfig({
         packageRoot,
         "../tool-github-graphql/src/index.ts"
       ),
-      "@gh-symphony/tool-linear-graphql": resolve(
-        packageRoot,
-        "../tool-linear-graphql/src/index.ts"
-      ),
       "@gh-symphony/tracker-file": resolve(
         packageRoot,
         "../tracker-file/src/index.ts"
@@ -42,10 +38,6 @@ export default defineConfig({
       "@gh-symphony/tracker-github": resolve(
         packageRoot,
         "../tracker-github/src/index.ts"
-      ),
-      "@gh-symphony/tracker-linear": resolve(
-        packageRoot,
-        "../tracker-linear/src/index.ts"
       ),
       "@gh-symphony/worker/git-transport": resolve(
         packageRoot,

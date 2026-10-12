@@ -4,7 +4,6 @@ import {
   buildPromptVariables,
   formatDeferredWorkflowHookPaths,
   formatWorkflowHookPathProblems,
-  type OrchestratorProjectConfig,
   parseWorkflowMarkdown,
   WorkflowValidationError,
   renderPrompt,
@@ -337,11 +336,9 @@ Commands:
   preview    Render the final worker prompt from a sample or live issue
 
 Options:
-  workflow init [--non-interactive] [--tracker <github-project|linear>] [--project <id>] [--linear-project-slug <slug>] [--output <path>] [--skip-skills] [--skip-context (deprecated no-op)] [--dry-run]
+  workflow init [--non-interactive] [--tracker github-project] [--project <id>] [--output <path>] [--skip-skills] [--skip-context (deprecated no-op)] [--dry-run]
   workflow validate [--file <path>]
-  workflow preview [issue] [--file <path>] [--issue <owner/repo#number|ENG-123>] [--project-id <projectId>] [--sample <json>] [--attempt <n>]
-
-Linear workflows use polling through the configured tracker adapter. No Linear webhook setup command is provided.
+  workflow preview [issue] [--file <path>] [--issue <owner/repo#number>] [--project-id <projectId>] [--sample <json>] [--attempt <n>]
 `);
 }
 
@@ -745,87 +742,6 @@ async function loadLiveIssue(
   };
 }
 
-const LINEAR_IDENTIFIER_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
-
-function isLinearIssueIdentifier(value: string): boolean {
-  return LINEAR_IDENTIFIER_PATTERN.test(value.trim().toUpperCase());
-}
-
-async function loadLinearIssue(
-  issueIdentifier: string,
-  projectId: string | undefined,
-  workflow: ReturnType<typeof parseWorkflowMarkdown>,
-  options: GlobalOptions
-): Promise<{
-  issue: TrackedIssue;
-  sampleSource: string;
-}> {
-  const selection =
-    await workflowCommandDependencies.resolveManagedProjectSelection({
-      configDir: options.configDir,
-      requestedProjectId: projectId,
-    });
-  if (selection.kind !== "resolved") {
-    throw new Error(selection.message);
-  }
-  const projectConfig = selection.projectConfig;
-
-  if (!projectConfig?.repository) {
-    throw new Error(
-      "Linear live issue preview requires a standalone project initialized with 'gh-symphony project start --project-dir <path>'."
-    );
-  }
-
-  const workflowProjectSlug = workflow.tracker.projectSlug?.trim();
-  if (!workflowProjectSlug) {
-    throw new Error(
-      'Linear live issue preview requires WORKFLOW.md field "tracker.project_slug".'
-    );
-  }
-
-  if (!workflow.tracker.apiKey?.trim()) {
-    throw new Error(
-      'Linear live issue preview requires WORKFLOW.md field "tracker.api_key" to resolve, for example "$LINEAR_API_KEY".'
-    );
-  }
-
-  if (
-    projectConfig.tracker.adapter !== "linear" ||
-    projectConfig.tracker.bindingId !== workflowProjectSlug
-  ) {
-    throw new Error(
-      `Linear live issue preview requires an active standalone project initialized for project "${workflowProjectSlug}". Run 'gh-symphony project start --project-dir <path>', then re-run the preview.`
-    );
-  }
-
-  const orchestratorProject: OrchestratorProjectConfig = {
-    projectId: projectConfig.projectId,
-    slug: projectConfig.slug,
-    workspaceDir: projectConfig.workspaceDir,
-    repository: projectConfig.repository,
-    tracker: projectConfig.tracker,
-  };
-  const trackerAdapter = workflowCommandDependencies.resolveTrackerAdapter(
-    projectConfig.tracker
-  );
-  const [issue] = await trackerAdapter.fetchIssueStatesByIds(
-    orchestratorProject,
-    [issueIdentifier.trim().toUpperCase()],
-    { token: workflow.tracker.apiKey }
-  );
-
-  if (!issue) {
-    throw new Error(
-      `Linear issue ${issueIdentifier} was not found in project "${workflow.tracker.projectSlug}".`
-    );
-  }
-
-  return {
-    issue,
-    sampleSource: `live:${issue.identifier}`,
-  };
-}
-
 async function validateWorkflow(
   workflowPath: string,
   markdown: string
@@ -1023,21 +939,13 @@ async function runPreview(
     resolveTrackerAdapter: resolveWorkflowConfigTrackerAdapter,
     workflowPath,
   });
-  if (
-    flags.issue &&
-    workflow.tracker.kind !== "github-project" &&
-    !(
-      workflow.tracker.kind === "linear" && isLinearIssueIdentifier(flags.issue)
-    )
-  ) {
+  if (flags.issue && workflow.tracker.kind !== "github-project") {
     throw new Error(
-      "Live issue preview requires 'tracker.kind: github-project' with owner/repo#number or 'tracker.kind: linear' with a Linear identifier such as ENG-123."
+      "Live issue preview requires 'tracker.kind: github-project' with owner/repo#number."
     );
   }
   const { issue, sampleSource } = flags.issue
-    ? workflow.tracker.kind === "linear"
-      ? await loadLinearIssue(flags.issue, flags.projectId, workflow, options)
-      : await loadLiveIssue(flags.issue, flags.projectId, workflow, options)
+    ? await loadLiveIssue(flags.issue, flags.projectId, workflow, options)
     : await loadSampleIssue(flags.sample);
   const renderedPrompt = renderIssueWorkflowPreview({
     workflow,

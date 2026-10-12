@@ -2,7 +2,6 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createGitHubGraphQLMcpServerEntry } from "@gh-symphony/tool-github-graphql";
-import { createLinearGraphQLMcpServerEntry } from "@gh-symphony/tool-linear-graphql";
 import {
   composeMcpServers,
   type McpServerDefinition,
@@ -13,9 +12,6 @@ export type ClaudeMcpTokenEnvironment = {
   GITHUB_GRAPHQL_TOKEN?: string;
   GITHUB_GRAPHQL_API_URL?: string;
   GITHUB_PROJECT_ID?: string;
-  LINEAR_API_KEY?: string;
-  LINEAR_AUTHORIZATION?: string;
-  LINEAR_GRAPHQL_URL?: string;
   SYMPHONY_TRACKER_KIND?: string;
   WORKSPACE_RUNTIME_DIR?: string;
   SYMPHONY_PROJECT_DIR?: string;
@@ -63,9 +59,6 @@ export async function composeClaudeMcpConfig(
     symphonyServer?.type === "http" && typeof symphonyServer.url === "string"
       ? { symphony: symphonyServer }
       : {};
-  if (symphonyTokenEnv.SYMPHONY_TRACKER_KIND !== "linear") {
-    delete mcpServers.linear_graphql;
-  }
   const repositoryConfig = trustRepoConfig
     ? readMcpConfig(join(workspaceRoot, ".mcp.json"))
     : undefined;
@@ -144,16 +137,6 @@ function createSymphonyMcpServers(
       githubProjectId: env.GITHUB_PROJECT_ID,
     }),
   };
-
-  if (env.SYMPHONY_TRACKER_KIND === "linear") {
-    mergedServers.linear_graphql = createLinearGraphQLMcpServerEntry({
-      linearGraphqlUrl: env.LINEAR_GRAPHQL_URL,
-      linearApiKey: env.LINEAR_API_KEY,
-      linearAuthorization: env.LINEAR_AUTHORIZATION,
-    });
-  } else {
-    delete mergedServers.linear_graphql;
-  }
 
   return mergedServers;
 }

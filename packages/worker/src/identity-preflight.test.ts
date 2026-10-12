@@ -100,13 +100,13 @@ describe("evaluateWorkerIdentityPreflight", () => {
     }
   });
 
-  it("fails closed for a bare numeric branch that collides with a Linear issue", () => {
+  it("fails closed for a bare numeric branch that collides with a non-GitHub issue", () => {
     const result = evaluateWorkerIdentityPreflight({
       env: {
         ...baseEnv,
         SYMPHONY_ISSUE_IDENTIFIER: "DEV-54",
         SYMPHONY_ISSUE_WORKSPACE_KEY: deriveIssueWorkspaceKey(
-          { adapter: "linear", issueSubjectId: "DEV-54" },
+          { adapter: "file", issueSubjectId: "DEV-54" },
           "DEV-54"
         ),
       },

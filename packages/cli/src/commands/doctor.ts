@@ -4,7 +4,6 @@ import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   formatDeferredWorkflowHookPaths,
-  normalizeLabels,
   formatWorkflowHookPathProblems,
   parseWorkflowMarkdown,
   parseWorkflowMarkdownForMigration,
@@ -92,7 +91,6 @@ type DoctorCheckId =
   | "managed_project"
   | "github_graphql_endpoint"
   | "github_project_resolution"
-  | "linear_tracker_resolution"
   | "config_directory"
   | "runtime_root"
   | "workspace_root"
@@ -117,12 +115,6 @@ type ProjectResolutionReason =
   | "missing_binding"
   | "api_error"
   | "selection_failed";
-
-type LinearResolutionReason =
-  | "missing_project_slug"
-  | "missing_token"
-  | "api_error"
-  | "missing_active_states";
 
 type ResolvedManagedProjectSelection = Extract<
   Awaited<ReturnType<typeof inspectManagedProjectSelection>>,
@@ -833,236 +825,6 @@ function resolveDoctorRepositoryFilter(
   return { owner, name };
 }
 
-async function checkLinearTrackerResolution(input: {
-  projectConfig: ResolvedManagedProjectSelection;
-  token: string | null;
-  deps: DoctorDependencies;
-}): Promise<DoctorCheckResult> {
-  const tracker = input.projectConfig.projectConfig.tracker;
-  const projectSlug = readStringSetting(
-    tracker.settings,
-    "projectSlug"
-  )?.trim();
-  const activeStates = readLinearActiveStates(tracker.settings);
-  const pickupLabels = readLinearPickupLabels(tracker.settings);
-
-  if (!projectSlug) {
-    return failCheck(
-      "linear_tracker_resolution",
-      "Linear tracker resolution",
-      "Linear tracker resolution could not run because the project slug is missing.",
-      "Configure WORKFLOW.md field 'tracker.project_slug', run 'gh-symphony project start --project-dir <path>' to refresh the project, then re-run 'gh-symphony doctor'.",
-      {
-        reason: "missing_project_slug" satisfies LinearResolutionReason,
-        adapter: tracker.adapter,
-      }
-    );
-  }
-
-  if (activeStates.length === 0) {
-    return failCheck(
-      "linear_tracker_resolution",
-      "Linear tracker resolution",
-      "Linear tracker resolution could not run because no active states are configured.",
-      "Add at least one active state to WORKFLOW.md under 'tracker.active_states', run 'gh-symphony project start --project-dir <path>' to refresh the project, then re-run 'gh-symphony doctor'.",
-      {
-        reason: "missing_active_states" satisfies LinearResolutionReason,
-        projectSlug,
-      }
-    );
-  }
-
-  const token = input.token?.trim() || process.env.LINEAR_API_KEY?.trim();
-  if (!token) {
-    return failCheck(
-      "linear_tracker_resolution",
-      "Linear tracker resolution",
-      "Linear tracker resolution could not run because neither tracker.api_key nor LINEAR_API_KEY resolved.",
-      "Set the environment variable referenced by WORKFLOW.md field 'tracker.api_key' or set LINEAR_API_KEY, then re-run 'gh-symphony doctor'.",
-      {
-        reason: "missing_token" satisfies LinearResolutionReason,
-        projectSlug,
-        activeStates,
-        pickupLabels,
-      }
-    );
-  }
-
-  try {
-    const project = await fetchLinearProjectBySlug({
-      endpoint: tracker.apiUrl?.trim() || "https://api.linear.app/graphql",
-      projectSlug,
-      token,
-      fetchImpl: input.deps.fetchImpl,
-    });
-
-    if (!project) {
-      return failCheck(
-        "linear_tracker_resolution",
-        "Linear tracker resolution",
-        `Linear project "${projectSlug}" was not found or is not accessible.`,
-        "Confirm the configured Linear API key can read the project, then re-run 'gh-symphony doctor'.",
-        {
-          reason: "api_error" satisfies LinearResolutionReason,
-          projectSlug,
-          activeStates,
-          pickupLabels,
-        }
-      );
-    }
-
-    return passCheck(
-      "linear_tracker_resolution",
-      "Linear tracker resolution",
-      `Resolved Linear project "${project.name}" (${project.slugId}). ${formatLinearConfigSummary(activeStates, pickupLabels)}`,
-      {
-        projectId: project.id,
-        projectSlug: project.slugId,
-        activeStates,
-        pickupLabels,
-      }
-    );
-  } catch (error) {
-    return failCheck(
-      "linear_tracker_resolution",
-      "Linear tracker resolution",
-      `Failed to resolve configured Linear project "${projectSlug}".`,
-      "Confirm the configured Linear API key, tracker endpoint, project slug, and network access, then re-run 'gh-symphony doctor'.",
-      {
-        reason: "api_error" satisfies LinearResolutionReason,
-        projectSlug,
-        activeStates,
-        pickupLabels,
-        error: formatSmokeError(error),
-      }
-    );
-  }
-}
-
-function readStringSetting(
-  settings: ResolvedManagedProjectSelection["projectConfig"]["tracker"]["settings"],
-  key: string
-): string | null {
-  const value = settings?.[key];
-  return typeof value === "string" ? value : null;
-}
-
-function readLinearActiveStates(
-  settings: ResolvedManagedProjectSelection["projectConfig"]["tracker"]["settings"]
-): string[] {
-  const value = settings?.activeStates;
-  if (Array.isArray(value)) {
-    return value.filter(
-      (state): state is string =>
-        typeof state === "string" && state.trim().length > 0
-    );
-  }
-  if (typeof value === "string") {
-    return value
-      .split(/\r?\n/)
-      .map((state) => state.trim())
-      .filter((state) => state.length > 0);
-  }
-  return [];
-}
-
-function readLinearPickupLabels(
-  settings: ResolvedManagedProjectSelection["projectConfig"]["tracker"]["settings"]
-): { include: string[]; exclude: string[] } {
-  const value = settings?.pickupLabels;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { include: [], exclude: [] };
-  }
-  return {
-    include: readStringArraySetting(value, "include"),
-    exclude: readStringArraySetting(value, "exclude"),
-  };
-}
-
-function readStringArraySetting(
-  value: Record<string, unknown>,
-  key: string
-): string[] {
-  const field = value[key];
-  return Array.isArray(field) ? normalizeLabels(field) : [];
-}
-
-function formatLinearConfigSummary(
-  activeStates: string[],
-  pickupLabels: { include: string[]; exclude: string[] }
-): string {
-  const labelSummary =
-    pickupLabels.include.length > 0 || pickupLabels.exclude.length > 0
-      ? `Pickup labels include=[${pickupLabels.include.join(", ") || "none"}], exclude=[${pickupLabels.exclude.join(", ") || "none"}].`
-      : "Pickup label filtering is not configured.";
-  return `Active states: ${activeStates.join(", ")}. ${labelSummary}`;
-}
-
-async function fetchLinearProjectBySlug(input: {
-  endpoint: string;
-  projectSlug: string;
-  token: string;
-  fetchImpl: typeof fetch;
-}): Promise<{ id: string; name: string; slugId: string } | null> {
-  const response = await input.fetchImpl(input.endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: input.token,
-    },
-    body: JSON.stringify({
-      query: `query SymphonyLinearDoctorProject($slug: String!) {
-  projects(filter: { slugId: { eq: $slug } }, first: 1) {
-    nodes {
-      id
-      name
-      slugId
-    }
-  }
-}`,
-      variables: { slug: input.projectSlug },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Linear GraphQL request failed with HTTP ${response.status}.`
-    );
-  }
-
-  const payload = (await response.json()) as {
-    data?: {
-      projects?: {
-        nodes?: Array<{ id?: string; name?: string; slugId?: string }>;
-      } | null;
-    };
-    errors?: Array<{ message?: string }>;
-  };
-  if (payload.errors?.length) {
-    const message =
-      payload.errors
-        .map((error) => error.message)
-        .filter(Boolean)
-        .join("; ") || "Unknown Linear GraphQL error";
-    throw new Error(`Linear GraphQL request failed: ${message}`);
-  }
-
-  const project = payload.data?.projects?.nodes?.[0];
-  if (
-    !project ||
-    typeof project.id !== "string" ||
-    typeof project.name !== "string" ||
-    typeof project.slugId !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: project.id,
-    name: project.name,
-    slugId: project.slugId,
-  };
-}
-
 async function buildPriorityMappingChecks(input: {
   auth: ResolvedGitHubAuth | null;
   selection: Awaited<ReturnType<typeof inspectManagedProjectSelection>> | null;
@@ -1345,16 +1107,6 @@ function formatSmokeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const LINEAR_ISSUE_IDENTIFIER_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
-
-function parseLinearSmokeIssueIdentifier(value: string): string {
-  const identifier = value.trim().toUpperCase();
-  if (!LINEAR_ISSUE_IDENTIFIER_PATTERN.test(identifier)) {
-    throw new Error("Linear issue identifiers must match TEAM-123.");
-  }
-  return identifier;
-}
-
 function buildSmokeTrackerProject(
   selection: ResolvedManagedProjectSelection
 ): OrchestratorProjectConfig {
@@ -1494,21 +1246,13 @@ async function buildDoctorSmokeChecks(input: {
       return checks;
     }
     const trackerDependencies = {
-      token:
-        trackerKind === "linear"
-          ? input.workflow.workflow.tracker.apiKey?.trim() ||
-            process.env.LINEAR_API_KEY?.trim()
-          : undefined,
       fetchImpl: input.deps.fetchImpl,
     };
 
     if (input.parsedArgs.issue) {
       let identifier: string;
       try {
-        identifier =
-          trackerKind === "linear"
-            ? parseLinearSmokeIssueIdentifier(input.parsedArgs.issue)
-            : input.parsedArgs.issue.trim();
+        identifier = input.parsedArgs.issue.trim();
         if (!identifier) {
           throw new Error("Tracker issue identifiers cannot be empty.");
         }
@@ -1518,14 +1262,9 @@ async function buildDoctorSmokeChecks(input: {
             "smoke_issue",
             "Smoke target issue",
             `Smoke check issue reference is invalid for the ${trackerKind} tracker: ${input.parsedArgs.issue}.`,
-            trackerKind === "linear"
-              ? "Use the expected '--issue TEAM-123' format and re-run the smoke check."
-              : "Use an issue identifier supported by the configured tracker and re-run the smoke check.",
+            "Use an issue identifier supported by the configured tracker and re-run the smoke check.",
             {
               issue: input.parsedArgs.issue,
-              ...(trackerKind === "linear"
-                ? { expectedFormat: "TEAM-123" }
-                : {}),
               error: formatSmokeError(error),
             }
           )
@@ -1591,7 +1330,7 @@ async function buildDoctorSmokeChecks(input: {
             "smoke_issue",
             "Smoke target issue",
             `No active live issue was found in the configured ${trackerKind} project.`,
-            `Move one issue into an active state (${input.workflow.workflow.lifecycle.activeStates.join(", ")}) or re-run with '--issue ${trackerKind === "linear" ? "TEAM-123" : "<issue-id>"}'.`,
+            `Move one issue into an active state (${input.workflow.workflow.lifecycle.activeStates.join(", ")}) or re-run with '--issue <issue-id>'.`,
             {
               activeStates: input.workflow.workflow.lifecycle.activeStates,
             }
@@ -1963,13 +1702,11 @@ export async function runDoctorDiagnostics(
       )
     );
 
-    if (resolvedProjectConfig.projectConfig.tracker.adapter !== "linear") {
-      githubGraphqlEndpoint = resolveGitHubGraphqlEndpoint({
-        trackerApiUrl: resolvedProjectConfig.projectConfig.tracker.apiUrl,
-        envApiUrl: process.env.GITHUB_GRAPHQL_API_URL,
-      });
-      checks.push(buildGitHubGraphqlEndpointCheck(githubGraphqlEndpoint));
-    }
+    githubGraphqlEndpoint = resolveGitHubGraphqlEndpoint({
+      trackerApiUrl: resolvedProjectConfig.projectConfig.tracker.apiUrl,
+      envApiUrl: process.env.GITHUB_GRAPHQL_API_URL,
+    });
+    checks.push(buildGitHubGraphqlEndpointCheck(githubGraphqlEndpoint));
   } else {
     checks.push(
       failCheck(
@@ -2113,19 +1850,7 @@ export async function runDoctorDiagnostics(
     );
   }
 
-  if (
-    resolvedProjectConfig.kind === "resolved" &&
-    resolvedProjectConfig.projectConfig.tracker.adapter === "linear"
-  ) {
-    checks.push(
-      await checkLinearTrackerResolution({
-        projectConfig: resolvedProjectConfig,
-        token:
-          workflow.status === "pass" ? workflow.workflow.tracker.apiKey : null,
-        deps,
-      })
-    );
-  } else if (resolvedProjectConfig.kind === "resolved" && !auth) {
+  if (resolvedProjectConfig.kind === "resolved" && !auth) {
     checks.push(
       failCheck(
         "github_project_resolution",
@@ -2946,20 +2671,6 @@ async function runDoctorFixes(
             check.title,
             "manual",
             check.remediation ?? "Fix the Claude runtime readiness check.",
-            undefined,
-            check.details
-          )
-        );
-        break;
-      case "linear_tracker_resolution":
-        steps.push(
-          remediationStep(
-            `remediate_${check.id}`,
-            check.id,
-            check.title,
-            "manual",
-            check.remediation ??
-              "Fix the Linear tracker configuration or credentials.",
             undefined,
             check.details
           )

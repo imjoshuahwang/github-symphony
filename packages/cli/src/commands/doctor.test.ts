@@ -77,37 +77,6 @@ function createProjectConfig(
   };
 }
 
-function createLinearProjectConfig(
-  workspaceDir: string,
-  overrides: Partial<CliProjectConfig["tracker"]> = {}
-): CliProjectConfig {
-  return {
-    projectId: "tenant-a",
-    slug: "tenant-a",
-    workspaceDir,
-    repository: {
-      owner: "acme",
-      name: "widgets",
-      url: "https://github.com/acme/widgets",
-      cloneUrl: "https://github.com/acme/widgets.git",
-    },
-    tracker: {
-      adapter: "linear",
-      bindingId: "symphony-0c79b11b75ea",
-      apiUrl: "https://linear.test/graphql",
-      settings: {
-        projectSlug: "symphony-0c79b11b75ea",
-        activeStates: "Todo\nIn Progress",
-        pickupLabels: {
-          include: ["agent", "dev-ready"],
-          exclude: ["no-agent"],
-        },
-      },
-      ...overrides,
-    },
-  };
-}
-
 function createFileProjectConfig(workspaceDir: string): CliProjectConfig {
   return {
     projectId: "tenant-a",
@@ -209,8 +178,6 @@ function authDependencies(
 
 const originalGraphQlToken = process.env.GITHUB_GRAPHQL_TOKEN;
 const originalGraphQlApiUrl = process.env.GITHUB_GRAPHQL_API_URL;
-const originalLinearApiKey = process.env.LINEAR_API_KEY;
-const originalCustomLinearToken = process.env.CUSTOM_LINEAR_TOKEN;
 const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
 
 async function createWorkflowFixture(
@@ -241,22 +208,6 @@ async function createWorkflowFixture(
     "utf8"
   );
   return { repoDir, pathEnv: binDir };
-}
-
-async function createLinearWorkflowFixture(
-  command = "fake-agent",
-  apiKeyReference: string | null = "$LINEAR_API_KEY"
-): Promise<{
-  repoDir: string;
-  pathEnv: string;
-}> {
-  const fixture = await createWorkflowFixture(command);
-  await writeFile(
-    join(fixture.repoDir, "WORKFLOW.md"),
-    `---\ntracker:\n  kind: linear\n  provider:\n${apiKeyReference ? `    api_key: ${apiKeyReference}\n` : ""}    project_slug: symphony-0c79b11b75ea\n    pickup_labels:\n      include:\n        - agent\n        - dev-ready\n      exclude:\n        - no-agent\n  active_states:\n    - Todo\n    - In Progress\ncodex:\n  command: ${command}\n---\nPrompt body\n`,
-    "utf8"
-  );
-  return fixture;
 }
 
 async function createFileWorkflowFixture(command = "fake-agent"): Promise<{
@@ -343,7 +294,6 @@ async function prepareBundleRuntimeFixture(input: {
           bindingId: "PVT_test",
           settings: {
             GITHUB_GRAPHQL_TOKEN: "ghp_xxx",
-            LINEAR_API_KEY: "lin_xxx",
           },
         },
       },
@@ -451,16 +401,6 @@ afterEach(() => {
   } else {
     process.env.GITHUB_GRAPHQL_API_URL = originalGraphQlApiUrl;
   }
-  if (originalLinearApiKey === undefined) {
-    delete process.env.LINEAR_API_KEY;
-  } else {
-    process.env.LINEAR_API_KEY = originalLinearApiKey;
-  }
-  if (originalCustomLinearToken === undefined) {
-    delete process.env.CUSTOM_LINEAR_TOKEN;
-  } else {
-    process.env.CUSTOM_LINEAR_TOKEN = originalCustomLinearToken;
-  }
   if (originalAnthropicApiKey === undefined) {
     delete process.env.ANTHROPIC_API_KEY;
   } else {
@@ -472,8 +412,6 @@ afterEach(() => {
 beforeEach(() => {
   delete process.env.GITHUB_GRAPHQL_TOKEN;
   delete process.env.GITHUB_GRAPHQL_API_URL;
-  delete process.env.LINEAR_API_KEY;
-  delete process.env.CUSTOM_LINEAR_TOKEN;
   delete process.env.ANTHROPIC_API_KEY;
 });
 
@@ -1957,359 +1895,6 @@ Prompt body`
     });
   });
 
-  it("validates Linear tracker configs without resolving a GitHub Project node", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture(
-      "fake-agent",
-      "$CUSTOM_LINEAR_TOKEN"
-    );
-    process.env.CUSTOM_LINEAR_TOKEN = "lin_custom_token";
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          projects: {
-            nodes: [
-              {
-                id: "project-1",
-                name: "Symphony",
-                slugId: "symphony-0c79b11b75ea",
-              },
-            ],
-          },
-        },
-      }),
-    }));
-    const getProjectDetail = vi.fn(async () => {
-      throw new Error("GitHub project resolution should be skipped");
-    });
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(baseOptions(configDir), [], {
-        ...authDependencies(),
-        inspectManagedProjectSelection: async () => ({
-          kind: "resolved",
-          projectId: "tenant-a",
-          projectConfig: createLinearProjectConfig(workspaceDir),
-        }),
-        getProjectDetail: getProjectDetail as never,
-        fetchImpl: fetchImpl as never,
-        pathEnv,
-      })
-    );
-    expect(report.ok).toBe(true);
-    const [, fetchInit] = fetchImpl.mock.calls[0] ?? [];
-    const requestBody = JSON.parse(String(fetchInit?.body));
-
-    expect(getProjectDetail).not.toHaveBeenCalled();
-    expect(
-      report.checks.find((check) => check.id === "github_project_resolution")
-    ).toBeUndefined();
-    expect(
-      report.checks.find((check) => check.id === "linear_tracker_resolution")
-    ).toMatchObject({
-      status: "pass",
-      summary: expect.stringContaining("Resolved Linear project"),
-      details: expect.objectContaining({
-        projectSlug: "symphony-0c79b11b75ea",
-        activeStates: ["Todo", "In Progress"],
-        pickupLabels: {
-          include: ["agent", "dev-ready"],
-          exclude: ["no-agent"],
-        },
-      }),
-    });
-    expect(requestBody.query).toContain("slugId");
-    expect(requestBody.variables).toEqual({
-      slug: "symphony-0c79b11b75ea",
-    });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      "https://linear.test/graphql",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "lin_custom_token",
-        }),
-      })
-    );
-  });
-
-  it("falls back to LINEAR_API_KEY when the Linear workflow omits api_key", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture(
-      "fake-agent",
-      null
-    );
-    process.env.LINEAR_API_KEY = "lin_environment_token";
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          projects: {
-            nodes: [
-              {
-                id: "project-1",
-                name: "Symphony",
-                slugId: "symphony-0c79b11b75ea",
-              },
-            ],
-          },
-        },
-      }),
-    }));
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(baseOptions(configDir), [], {
-        ...authDependencies(),
-        inspectManagedProjectSelection: async () => ({
-          kind: "resolved",
-          projectId: "tenant-a",
-          projectConfig: createLinearProjectConfig(workspaceDir),
-        }),
-        fetchImpl: fetchImpl as never,
-        pathEnv,
-      })
-    );
-
-    expect(
-      report.checks.find((check) => check.id === "linear_tracker_resolution")
-    ).toMatchObject({ status: "pass" });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      "https://linear.test/graphql",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "lin_environment_token",
-        }),
-      })
-    );
-  });
-
-  it("reads a Linear smoke issue without a GitHub Project binding", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture();
-    process.env.LINEAR_API_KEY = "lin_test_token";
-    const linearIssue = createTrackedIssue({
-      id: "linear-issue-54",
-      identifier: "DEV-54",
-      number: 54,
-      state: "In Progress",
-      url: "https://linear.app/acme/issue/DEV-54",
-      tracker: {
-        adapter: "linear",
-        bindingId: "symphony-0c79b11b75ea",
-        itemId: "linear-issue-54",
-      },
-    });
-    const listIssues = vi.fn(async () => [linearIssue]);
-    const resolveTrackerAdapter = vi.fn(() => ({
-      listIssues,
-      listIssuesByStates: vi.fn(),
-      fetchIssueStatesByIds: vi.fn(),
-    }));
-    const getProjectDetail = vi.fn(async () => {
-      throw new Error("GitHub project resolution should be skipped");
-    });
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          projects: {
-            nodes: [
-              {
-                id: "project-1",
-                name: "Symphony",
-                slugId: "symphony-0c79b11b75ea",
-              },
-            ],
-          },
-        },
-      }),
-    }));
-    const dependencies = {
-      ...authDependencies(),
-      inspectManagedProjectSelection: async () => ({
-        kind: "resolved" as const,
-        projectId: "tenant-a",
-        projectConfig: createLinearProjectConfig(workspaceDir),
-      }),
-      getProjectDetail: getProjectDetail as never,
-      resolveTrackerAdapter,
-      fetchImpl: fetchImpl as never,
-      pathEnv,
-    };
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(baseOptions(configDir), ["--smoke"], dependencies)
-    );
-
-    expect(report.ok).toBe(true);
-    expect(getProjectDetail).not.toHaveBeenCalled();
-    expect(listIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "tenant-a" }),
-      { token: "lin_test_token", fetchImpl }
-    );
-    expect(
-      report.checks.find((check) => check.id === "smoke_issue")
-    ).toMatchObject({
-      status: "pass",
-      summary: expect.stringContaining("DEV-54"),
-      details: expect.objectContaining({ issue: "DEV-54", source: "auto" }),
-    });
-    expect(
-      report.checks.find((check) => check.id === "project_repository_link")
-    ).toBeUndefined();
-  });
-
-  it("accepts a Linear identifier for an explicit smoke issue", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture();
-    process.env.LINEAR_API_KEY = "lin_test_token";
-    const linearIssue = createTrackedIssue({
-      id: "linear-issue-54",
-      identifier: "DEV-54",
-      number: 54,
-      state: "In Progress",
-      tracker: {
-        adapter: "linear",
-        bindingId: "symphony-0c79b11b75ea",
-        itemId: "linear-issue-54",
-      },
-    });
-    const fetchIssueStatesByIds = vi.fn(async () => [linearIssue]);
-    const resolveTrackerAdapter = vi.fn(() => ({
-      listIssues: vi.fn(),
-      listIssuesByStates: vi.fn(),
-      fetchIssueStatesByIds,
-    }));
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          projects: {
-            nodes: [
-              {
-                id: "project-1",
-                name: "Symphony",
-                slugId: "symphony-0c79b11b75ea",
-              },
-            ],
-          },
-        },
-      }),
-    }));
-    const projectConfig = createLinearProjectConfig(workspaceDir);
-    const dependencies = {
-      ...authDependencies(),
-      inspectManagedProjectSelection: async () => ({
-        kind: "resolved" as const,
-        projectId: "tenant-a",
-        projectConfig,
-      }),
-      resolveTrackerAdapter,
-      fetchImpl: fetchImpl as never,
-      pathEnv,
-    };
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(
-        baseOptions(configDir),
-        ["--smoke", "--issue", "DEV-54"],
-        dependencies
-      )
-    );
-
-    expect(report.ok).toBe(true);
-    expect(fetchIssueStatesByIds).toHaveBeenCalledWith(
-      expect.objectContaining({
-        projectId: "tenant-a",
-        tracker: projectConfig.tracker,
-      }),
-      ["DEV-54"],
-      { token: "lin_test_token", fetchImpl }
-    );
-    expect(
-      report.checks.find((check) => check.id === "smoke_issue")
-    ).toMatchObject({
-      status: "pass",
-      details: expect.objectContaining({ issue: "DEV-54", source: "explicit" }),
-    });
-  });
-
-  it("normalizes lowercase Linear identifiers for explicit smoke issues", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture();
-    process.env.LINEAR_API_KEY = "lin_test_token";
-    const fetchIssueStatesByIds = vi.fn(async () => [
-      createTrackedIssue({
-        identifier: "DEV-54",
-        tracker: {
-          adapter: "linear",
-          bindingId: "symphony-0c79b11b75ea",
-          itemId: "linear-issue-54",
-        },
-      }),
-    ]);
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(
-        baseOptions(configDir),
-        ["--smoke", "--issue", "dev-54"],
-        {
-          ...authDependencies(),
-          inspectManagedProjectSelection: async () => ({
-            kind: "resolved" as const,
-            projectId: "tenant-a",
-            projectConfig: createLinearProjectConfig(workspaceDir),
-          }),
-          resolveTrackerAdapter: vi.fn(() => ({
-            listIssues: vi.fn(),
-            listIssuesByStates: vi.fn(),
-            fetchIssueStatesByIds,
-          })),
-          fetchImpl: vi.fn(async () => ({
-            ok: true,
-            status: 200,
-            json: async () => ({
-              data: {
-                projects: {
-                  nodes: [
-                    {
-                      id: "project-1",
-                      name: "Symphony",
-                      slugId: "symphony-0c79b11b75ea",
-                    },
-                  ],
-                },
-              },
-            }),
-          })) as never,
-          pathEnv,
-        }
-      )
-    );
-
-    expect(report.ok).toBe(true);
-    expect(fetchIssueStatesByIds).toHaveBeenCalledWith(
-      expect.anything(),
-      ["DEV-54"],
-      expect.anything()
-    );
-  });
-
   it("uses the configured file tracker adapter for automatic smoke reads", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
     const workspaceDir = join(configDir, "workspaces");
@@ -2396,9 +1981,8 @@ Prompt body`
     const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
     const workspaceDir = join(configDir, "workspaces");
     await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture();
-    process.env.LINEAR_API_KEY = "lin_test_token";
-    const projectConfig = createLinearProjectConfig(workspaceDir);
+    const { repoDir, pathEnv } = await createFileWorkflowFixture();
+    const projectConfig = createFileProjectConfig(workspaceDir);
     delete projectConfig.repository;
 
     const report = await withCwd(repoDir, () =>
@@ -2418,48 +2002,6 @@ Prompt body`
     ).toMatchObject({
       status: "fail",
       summary: expect.stringContaining("no repository mapping"),
-    });
-  });
-
-  it("reports an unresolved tracker.api_key as a Linear tracker diagnostic", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "doctor-config-"));
-    const workspaceDir = join(configDir, "workspaces");
-    await prepareDoctorPaths(configDir, workspaceDir);
-    const { repoDir, pathEnv } = await createLinearWorkflowFixture();
-    const fetchImpl = vi.fn();
-
-    const report = await withCwd(repoDir, () =>
-      runDoctorDiagnostics(baseOptions(configDir), [], {
-        ...authDependencies(),
-        inspectManagedProjectSelection: async () => ({
-          kind: "resolved",
-          projectId: "tenant-a",
-          projectConfig: createLinearProjectConfig(workspaceDir),
-        }),
-        fetchImpl: fetchImpl as never,
-        pathEnv,
-      })
-    );
-
-    expect(report.ok).toBe(false);
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(
-      report.checks.find((check) => check.id === "github_project_resolution")
-    ).toBeUndefined();
-    expect(
-      report.checks.find((check) => check.id === "linear_tracker_resolution")
-    ).toMatchObject({
-      status: "fail",
-      summary: expect.stringContaining(
-        "neither tracker.api_key nor LINEAR_API_KEY resolved"
-      ),
-      remediation: expect.stringContaining(
-        "environment variable referenced by WORKFLOW.md"
-      ),
-      details: expect.objectContaining({
-        reason: "missing_token",
-        projectSlug: "symphony-0c79b11b75ea",
-      }),
     });
   });
 
@@ -3014,7 +2556,6 @@ describe("doctor command handler", () => {
     for (const secret of [
       "abc123",
       "ghp_xxx",
-      "lin_xxx",
       "sk-xxx",
       "json_token_value",
       "json_secret_value",

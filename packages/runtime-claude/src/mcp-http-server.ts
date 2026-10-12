@@ -7,7 +7,6 @@ import type {
   OrchestratorTrackerAdapter,
 } from "@gh-symphony/core";
 import { githubProjectTrackerAdapter } from "@gh-symphony/tracker-github";
-import { linearTrackerAdapter } from "@gh-symphony/tracker-linear";
 
 export type ClaudeMcpHostContext = AgentToolExecutionContext;
 export type ClaudeMcpHttpServer = {
@@ -28,7 +27,7 @@ export async function startClaudeMcpHttpServer(options: {
 }): Promise<ClaudeMcpHttpServer> {
   const sessionToken = randomBytes(32).toString("base64url");
   const toolSnapshot = createToolSnapshot(
-    options.adapters ?? resolveHostToolAdapters(options.env)
+    options.adapters ?? [githubProjectTrackerAdapter]
   );
   let server: Server | null = createServer(async (request, response) => {
     if (!isAuthorized(request, sessionToken)) {
@@ -165,13 +164,6 @@ function createToolSnapshot(
   );
 }
 
-function resolveHostToolAdapters(
-  env: NodeJS.ProcessEnv
-): readonly OrchestratorTrackerAdapter[] {
-  return env.SYMPHONY_TRACKER_KIND === "linear"
-    ? [githubProjectTrackerAdapter, linearTrackerAdapter]
-    : [githubProjectTrackerAdapter];
-}
 function isAuthorized(request: IncomingMessage, token: string): boolean {
   return request.headers.authorization === `Bearer ${token}`;
 }

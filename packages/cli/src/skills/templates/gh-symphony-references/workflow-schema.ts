@@ -24,7 +24,6 @@ export function generateWorkflowSchemaReference(
     "Use an explicit empty list (`blocker_check_states: []`) to disable blocker gating.",
     "That explicit opt-out intentionally diverges from the vendored Symphony specification's unconditional blocker rule.",
     "Missing `tracker.planning_states` remains disabled and is independent of blocker gating.",
-    "Linear blockers are normalized from inverse relations of type `blocks`.",
     "",
     "## Supported Template Variables",
     "",

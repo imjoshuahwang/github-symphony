@@ -2,9 +2,8 @@
 
 ## Setup
 
-Run `pnpm e2e:claude`. The Claude Docker fixture supplies raw GitHub aliases,
-`GITHUB_TOKEN_BROKER_SECRET`, `LINEAR_API_KEY`, and `LINEAR_AUTHORIZATION` to
-the worker host. It seeds a real local bare Git remote and an assigned branch.
+Run `pnpm e2e:claude`. The Claude Docker fixture supplies raw GitHub aliases and
+`GITHUB_TOKEN_BROKER_SECRET` to the worker host. It seeds a real local bare Git remote and an assigned branch.
 
 ## Steps
 
@@ -24,12 +23,12 @@ the worker host. It seeds a real local bare Git remote and an assigned branch.
 
 ## Expected
 
-- The Claude child has none of the supplied GitHub, Linear, or broker secrets.
+- The Claude child has none of the supplied GitHub or broker secrets.
 - Every literal expected credential name is injected into the worker and absent
   from both dumped child environments. The literals are separately cross-checked
   against the exported contract, host-constructed paths and values are asserted
   independently, and no injected contract sentinel leaks under another name.
-- The default custom child has no supplied GitHub, Linear, tracker, or broker
+- The default custom child has no supplied GitHub, tracker, or broker
   secret, while its declared custom provider credential remains available.
 - The compatibility custom child receives raw worker credentials by design, but
   both custom modes retain private `HOME`/`GH_CONFIG_DIR`, override

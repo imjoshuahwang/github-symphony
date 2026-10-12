@@ -70,7 +70,7 @@ vi.mock("@gh-symphony/orchestrator", () => ({
   isProcessRunning: vi.fn(() => true),
   resolveProjectLockPath: (runtimeRoot: string, projectId: string) =>
     join(runtimeRoot, "projects", projectId, ".lock"),
-  getSupportedTrackerKinds: () => ["github-project", "linear", "file"],
+  getSupportedTrackerKinds: () => ["github-project", "file"],
   resolveWorkflowConfigTrackerAdapter: () => undefined,
   resolveOrchestratorLogLevel: (value?: string | null) =>
     value === "verbose" ? "verbose" : "normal",
@@ -130,7 +130,6 @@ const startModule = await import("./start.js");
 const ghAuth = await import("../github/gh-auth.js");
 const githubClient = await import("../github/client.js");
 const originalGithubToken = process.env.GITHUB_GRAPHQL_TOKEN;
-const originalLinearApiKey = process.env.LINEAR_API_KEY;
 const originalHttpApiToken = process.env.GH_SYMPHONY_HTTP_TOKEN;
 
 beforeEach(() => {
@@ -204,7 +203,6 @@ beforeEach(() => {
     )
   );
   process.env.GITHUB_GRAPHQL_TOKEN = originalGithubToken;
-  process.env.LINEAR_API_KEY = originalLinearApiKey;
   process.env.GH_SYMPHONY_HTTP_TOKEN = HTTP_API_TOKEN;
   serviceDependencies.length = 0;
   serviceProjectConfigs.length = 0;
@@ -234,7 +232,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   process.exitCode = undefined;
   process.env.GITHUB_GRAPHQL_TOKEN = originalGithubToken;
-  process.env.LINEAR_API_KEY = originalLinearApiKey;
   process.env.GH_SYMPHONY_HTTP_TOKEN = originalHttpApiToken;
 });
 
@@ -778,35 +775,6 @@ Handle {{issue.identifier}}.\n`,
     expect(acquireProjectLock).toHaveBeenCalled();
     expect(run).toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(0);
-  });
-
-  it("fails fast for Linear projects when LINEAR_API_KEY is missing", async () => {
-    const linearProject = createProject("tenant-a", "acme", "platform");
-    linearProject.tracker = {
-      adapter: "linear",
-      bindingId: "linear-workspace",
-      settings: {},
-    };
-    delete process.env.LINEAR_API_KEY;
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [linearProject],
-    });
-    const stderr = captureWrites(process.stderr);
-
-    try {
-      await startModule.default([], baseOptions(configDir));
-    } finally {
-      stderr.restore();
-    }
-
-    expect(stderr.output()).toContain(
-      "Set LINEAR_API_KEY in the environment before running 'gh-symphony project start'."
-    );
-    expect(ghAuthMocks.resolveGitHubAuth).not.toHaveBeenCalled();
-    expect(acquireProjectLock).not.toHaveBeenCalled();
-    expect(run).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
   });
 
   it("runs a single orchestration tick and exits naturally with --once", async () => {

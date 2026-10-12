@@ -4,7 +4,6 @@ import type {
   OrchestratorTrackerAdapter,
 } from "@gh-symphony/core";
 import { githubProjectTrackerAdapter } from "@gh-symphony/tracker-github";
-import { linearTrackerAdapter } from "@gh-symphony/tracker-linear";
 
 export type TrackerToolContext = AgentToolExecutionContext;
 
@@ -44,7 +43,7 @@ export async function executeCodexDynamicToolCall(
   if (!isRecord(argumentsValue)) {
     return failure("invalid_arguments", "Tool arguments must be an object.");
   }
-  const adapters = dependencies.adapters ?? resolveTrackerToolAdapters(env);
+  const adapters = dependencies.adapters ?? [githubProjectTrackerAdapter];
   const adapter = adapters.find((candidate) =>
     candidate.agentToolSpecs?.().some((tool) => tool.name === toolName)
   );
@@ -73,14 +72,6 @@ export async function executeCodexDynamicToolCall(
       error instanceof Error ? error.message : String(error)
     );
   }
-}
-
-function resolveTrackerToolAdapters(
-  env: NodeJS.ProcessEnv
-): readonly OrchestratorTrackerAdapter[] {
-  return env.SYMPHONY_TRACKER_KIND === "linear"
-    ? [githubProjectTrackerAdapter, linearTrackerAdapter]
-    : [githubProjectTrackerAdapter];
 }
 
 function parseNativeRef(

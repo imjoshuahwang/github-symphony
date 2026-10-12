@@ -34,7 +34,6 @@ Provider-specific compact adapter profiles and host-side agent-tool contracts:
 
 - [GitHub Project](trackers/github-project.md) — configuration, normalization, and `github_graphql`
 - [GitHub tool](trackers/github.md) — standalone `github_graphql` tool contract
-- [Linear](trackers/linear.md) — configuration, normalization, and `linear_graphql`
 - [File](trackers/file.md) — local/Docker E2E fixture adapter profile
 
 ## designs/

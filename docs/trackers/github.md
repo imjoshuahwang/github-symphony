@@ -17,8 +17,7 @@ the result only; the adapter uses the declared direct host GitHub credential.
 | Rate limits | GitHub GraphQL rate-limit headers and the GraphQL `rateLimit` field are measured by the host and applied to the shared GitHub rate-limit policy; callers should keep queries small and respect retry guidance.                                                                                                                                                                   |
 
 The GitHub tool is always advertised because GitHub repository and pull-request
-operations remain available for Linear-tracked projects; `linear_graphql` is
-added when the selected tracker is Linear. It is not an MCP subprocess and
+operations remain available for every tracker. It is not an MCP subprocess and
 must not be recreated by the coding-agent child. In the temporary brokerless
 compatibility path, a Codex child can still inherit `GITHUB_GRAPHQL_TOKEN`
 until #700 removes that legacy path; host-side tool execution itself reads the

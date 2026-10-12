@@ -56,7 +56,6 @@ type CliOptionValues = Partial<
     issue?: string;
     level?: string;
     logLevel?: string;
-    linearProjectSlug?: string;
     nonInteractive?: boolean;
     once?: boolean;
     output?: string;
@@ -318,9 +317,8 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
       .command("init")
       .description("Generate WORKFLOW.md and workflow support files")
       .option("--non-interactive", "Run without prompts")
-      .option("--tracker <kind>", "Tracker kind: github-project or linear")
+      .option("--tracker <kind>", "Tracker kind: github-project")
       .option("--project <id>", "GitHub Project ID or URL")
-      .option("--linear-project-slug <slug>", "Linear project slug")
       .option("--output <path>", "Write WORKFLOW.md to a custom path")
       .option(
         "--runtime <kind>",
@@ -337,7 +335,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
     pushOption(args, "--non-interactive", values.nonInteractive);
     pushOption(args, "--tracker", values.tracker);
     pushOption(args, "--project", values.project);
-    pushOption(args, "--linear-project-slug", values.linearProjectSlug);
     pushOption(args, "--output", values.output);
     pushOption(args, "--runtime", values.runtime);
     pushOption(args, "--skip-skills", values.skipSkills);

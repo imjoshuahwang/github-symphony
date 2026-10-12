@@ -336,7 +336,7 @@ describe("OrchestratorFsStore.loadRecentRunEvents", () => {
       projectId: "project-1",
       issueId: "issue-1",
       issueIdentifier: "ENG-123",
-      issueTitle: "Linear issue",
+      issueTitle: "Tracker issue",
       issueState: "Todo",
       issueSubjectId: "issue-1",
       repository: {
@@ -360,8 +360,8 @@ describe("OrchestratorFsStore.loadRecentRunEvents", () => {
       lastWorkerLog: null,
       lastTurnSummary: null,
       tokenUsage: undefined,
-      linear: {
-        LINEAR_API_KEY: "lin_secret",
+      tracker: {
+        SERVICE_API_KEY: "svc_secret",
       },
     } as never);
 
@@ -374,7 +374,7 @@ describe("OrchestratorFsStore.loadRecentRunEvents", () => {
       error: "worker failed",
       attempt: 1,
       headers: {
-        authorization: "Bearer lin_secret",
+        authorization: "Bearer svc_secret",
       },
     } as never);
 
@@ -387,8 +387,8 @@ describe("OrchestratorFsStore.loadRecentRunEvents", () => {
       "utf8"
     );
 
-    expect(runJson).not.toContain("lin_secret");
-    expect(eventsNdjson).not.toContain("lin_secret");
+    expect(runJson).not.toContain("svc_secret");
+    expect(eventsNdjson).not.toContain("svc_secret");
     expect(runJson).toContain("[REDACTED]");
     expect(eventsNdjson).toContain("[REDACTED]");
   });
@@ -402,7 +402,7 @@ describe("OrchestratorFsStore.loadRecentRunEvents", () => {
       projectId: "tenant:one",
       issueId: "issue-1",
       issueIdentifier: "ENG-123",
-      issueTitle: "Linear issue",
+      issueTitle: "Tracker issue",
       issueState: "Todo",
       issueSubjectId: "issue-1",
       repository: {

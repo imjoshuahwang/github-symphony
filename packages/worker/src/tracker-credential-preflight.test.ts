@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OrchestratorProjectConfig } from "@gh-symphony/core";
 import { githubProjectTrackerAdapter } from "@gh-symphony/tracker-github";
-import { linearTrackerAdapter } from "@gh-symphony/tracker-linear";
 import { resolveTrackerCredentialPreflight } from "./tracker-credential-preflight.js";
 
 const project = {} as OrchestratorProjectConfig;
@@ -46,34 +45,6 @@ describe("resolveTrackerCredentialPreflight", () => {
     ).toMatchObject({ ok: false });
   });
 
-  it("accepts either supported Linear credential", () => {
-    expect(
-      resolveTrackerCredentialPreflight({
-        SYMPHONY_TRACKER_ADAPTER: "linear",
-        LINEAR_API_KEY: "linear-key",
-      })
-    ).toEqual({ ok: true });
-    expect(
-      resolveTrackerCredentialPreflight({
-        SYMPHONY_TRACKER_ADAPTER: "linear",
-        LINEAR_AUTHORIZATION: "Bearer linear-key",
-      })
-    ).toEqual({ ok: true });
-  });
-
-  it("rejects a Linear worker without a credential", () => {
-    expect(
-      resolveTrackerCredentialPreflight({
-        SYMPHONY_TRACKER_ADAPTER: "linear",
-      })
-    ).toMatchObject({
-      ok: false,
-      reason: expect.stringContaining(
-        "LINEAR_AUTHORIZATION or LINEAR_API_KEY is required"
-      ),
-    });
-  });
-
   it("does not require hosted credentials for other tracker adapters", () => {
     expect(
       resolveTrackerCredentialPreflight({
@@ -103,9 +74,6 @@ describe("resolveTrackerCredentialPreflight", () => {
         GITHUB_TOKEN_BROKER_SECRET: "secret",
       },
     ],
-    ["linear", linearTrackerAdapter, {}],
-    ["linear", linearTrackerAdapter, { LINEAR_API_KEY: "key" }],
-    ["linear", linearTrackerAdapter, { LINEAR_AUTHORIZATION: "Bearer token" }],
   ] as const)(
     "matches the %s adapter credential contract for %j",
     (adapterName, adapter, environment) => {

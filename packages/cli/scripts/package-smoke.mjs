@@ -49,7 +49,6 @@ try {
 
   for (const [server, expectedName] of [
     ["github", "github-symphony-graphql"],
-    ["linear", "github-symphony-linear-graphql"],
   ]) {
     const output = run(
       process.execPath,

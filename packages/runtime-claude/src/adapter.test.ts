@@ -145,7 +145,7 @@ describe("ClaudePrintRuntimeAdapter", () => {
 
   it.each([
     ["an empty declaration", []],
-    ["a Linear-only declaration", ["LINEAR_API_KEY", "LINEAR_AUTHORIZATION"]],
+    ["another tracker's declaration", ["CUSTOM_TRACKER_SECRET"]],
   ])(
     "strips every core backstop credential with %s",
     async (_label, declaredNames) => {
@@ -471,8 +471,6 @@ describe("ClaudePrintRuntimeAdapter", () => {
           DOCKER_CONFIG: "/Users/operator/.docker",
           GITHUB_TOKEN_BROKER_URL: "https://broker.example/runtime-credentials",
           GITHUB_TOKEN_BROKER_SECRET: "broker-secret",
-          LINEAR_API_KEY: "lin-api-key",
-          LINEAR_AUTHORIZATION: "Bearer lin-authorization",
           SSH_AUTH_SOCK: "/tmp/operator-ssh-agent.sock",
           GIT_ASKPASS: "/tmp/operator-git-askpass",
           SSH_ASKPASS: "/tmp/operator-ssh-askpass",
@@ -480,8 +478,6 @@ describe("ClaudePrintRuntimeAdapter", () => {
           XDG_CONFIG_HOME: "/tmp/operator-config",
           SYMPHONY_TRACKER_SECRET_ENVIRONMENT_NAMES: JSON.stringify([
             "GITHUB_TOKEN_BROKER_SECRET",
-            "LINEAR_API_KEY",
-            "LINEAR_AUTHORIZATION",
             "TARGET_REPOSITORY_URL",
             "HOME",
             "USERPROFILE",
@@ -504,8 +500,6 @@ describe("ClaudePrintRuntimeAdapter", () => {
     expect(calls[0]?.GIT_CONFIG_KEY_0).toBeUndefined();
     expect(calls[0]?.GIT_CONFIG_VALUE_0).toBeUndefined();
     expect(calls[0]?.GITHUB_TOKEN_BROKER_SECRET).toBeUndefined();
-    expect(calls[0]?.LINEAR_API_KEY).toBeUndefined();
-    expect(calls[0]?.LINEAR_AUTHORIZATION).toBeUndefined();
     expect(calls[0]?.SSH_AUTH_SOCK).toBeUndefined();
     expect(calls[0]?.GIT_ASKPASS).toBeUndefined();
     expect(calls[0]?.SSH_ASKPASS).toBeUndefined();

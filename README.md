@@ -151,13 +151,12 @@ gh-symphony doctor --smoke
 gh-symphony project start --project-dir <path> --once
 ```
 
-`doctor --smoke` validates the configured tracker, repository workflow, runtime command, workspace root, and hook paths without dispatching a worker. GitHub projects validate their Project binding; Linear projects read through the Linear adapter without requiring one. `project start --once` then performs startup cleanup plus one poll/reconcile/dispatch tick and exits.
+`doctor --smoke` validates the configured tracker, repository workflow, runtime command, workspace root, and hook paths without dispatching a worker. GitHub projects validate their Project binding. `project start --once` then performs startup cleanup plus one poll/reconcile/dispatch tick and exits.
 
 Use an explicit issue when you want a deterministic preflight:
 
 ```bash
 gh-symphony doctor --smoke --issue owner/repo#123
-# Linear: gh-symphony doctor --smoke --issue DEV-54
 ```
 
 ### 4. Run the Orchestrator
@@ -433,7 +432,7 @@ gh-symphony project stop                       # Stop its daemon
 gh-symphony project list                       # List cached projects
 ```
 
-The project folder is the runtime source of truth and the address: every command derives the runtime from the folder's `WORKFLOW.md` on each start, so editing the workflow takes effect on the next start with no registration step. Status exposes both the loaded project workflow identity and the current committed repository-policy identity when a configured local checkout or persisted issue checkout is available. `doctor` warns when a regular-file project workflow is a stale copy of an older reachable repository revision, and both surfaces warn when the committed comparison cannot be determined; symlinks, current copies, and deliberately independent policies remain distinct non-stale identities. For remote clone URLs, status and doctor share the project's newest persisted checkout as their local comparison source instead of using the operator's current directory. The comparison never fetches. `project start --help` lists its runtime flags, including `--once`, `--daemon`, `--assigned-only`, `--bind-all`, `--http`, `--web`, `--log-level`, and `--project-dir`. `--assigned-only` is input to the tracker adapter's `dispatchable` derivation; the scheduler consumes that normalized eligibility result rather than interpreting provider-specific assignment rules. Starting refuses a tracker mapping that overlaps a project already running against the same repository, and asks for confirmation when the overlapping project is stopped. Two projects on one repository stay disjoint through `tracker.provider.pickup_labels.include`, which GitHub and Linear apply as an any-match candidate pre-filter. `tracker.required_labels` is separate: every configured label must remain present for an issue to be routable, including between worker turns. Label comparison is case-insensitive and ignores surrounding whitespace, so `Agent`, `agent`, and `" AGENT "` are the same label. `repository.clone_url` overrides the derived clone URL for mirrors, Enterprise hosts, or local paths. See [docs/configuration.md](docs/configuration.md) for the project `.env` loading order and skill layering details.
+The project folder is the runtime source of truth and the address: every command derives the runtime from the folder's `WORKFLOW.md` on each start, so editing the workflow takes effect on the next start with no registration step. Status exposes both the loaded project workflow identity and the current committed repository-policy identity when a configured local checkout or persisted issue checkout is available. `doctor` warns when a regular-file project workflow is a stale copy of an older reachable repository revision, and both surfaces warn when the committed comparison cannot be determined; symlinks, current copies, and deliberately independent policies remain distinct non-stale identities. For remote clone URLs, status and doctor share the project's newest persisted checkout as their local comparison source instead of using the operator's current directory. The comparison never fetches. `project start --help` lists its runtime flags, including `--once`, `--daemon`, `--assigned-only`, `--bind-all`, `--http`, `--web`, `--log-level`, and `--project-dir`. `--assigned-only` is input to the tracker adapter's `dispatchable` derivation; the scheduler consumes that normalized eligibility result rather than interpreting provider-specific assignment rules. Starting refuses a tracker mapping that overlaps a project already running against the same repository, and asks for confirmation when the overlapping project is stopped. Two projects on one repository stay disjoint through `tracker.provider.pickup_labels.include`, which GitHub applies as an any-match candidate pre-filter. `tracker.required_labels` is separate: every configured label must remain present for an issue to be routable, including between worker turns. Label comparison is case-insensitive and ignores surrounding whitespace, so `Agent`, `agent`, and `" AGENT "` are the same label. `repository.clone_url` overrides the derived clone URL for mirrors, Enterprise hosts, or local paths. See [docs/configuration.md](docs/configuration.md) for the project `.env` loading order and skill layering details.
 
 ### Official Container Deployment
 
@@ -568,30 +567,7 @@ Use `gh-symphony project status --project-dir <path> --watch`, `gh-symphony doct
 
 `gh-symphony setup` generates `WORKFLOW.md` and its support files in the cwd project folder. `project start --project-dir <path>` derives and refreshes runtime configuration from that folder on every start.
 
-For Linear tracker projects, `WORKFLOW.md` remains the source of truth:
-
-```yaml
-tracker:
-  kind: linear
-  provider:
-    api_key: $LINEAR_API_KEY
-    project_slug: symphony-0c79b11b75ea
-    pickup_labels:
-      include:
-        - agent
-        - dev-ready
-      exclude:
-        - no-agent
-        - needs-spec
-```
-
-`gh-symphony setup` validates that `tracker.provider.project_slug` is present and that the optional `tracker.provider.api_key` reference resolves when supplied. Without it, Linear uses `LINEAR_API_KEY`. Flat tracker keys are rejected; run `gh-symphony doctor` for a normalized provider migration block. The legacy `.gh-symphony/config.json` file is not used as the Linear source of truth.
-
-`gh-symphony project start --project-dir <path> --assigned-only` also applies to Linear trackers. It is an input to the Linear adapter's `dispatchable` derivation: the adapter keeps candidate issues observable, compares each returned `assignee.id` with the authenticated viewer, and marks nonmatching or unassigned issues non-dispatchable. With a personal API key this viewer is that person; with a service-account key it is the service account. Symphony does not fail fast because Linear does not expose enough token metadata in the issue query path to distinguish those cases reliably.
-
-GitHub and Linear workflows may configure `tracker.provider.pickup_labels.include` and `tracker.provider.pickup_labels.exclude` as candidate filters. Excluded labels always win; when include labels are configured, an issue needs any one include label before it is considered for dispatch. On GitHub, this pre-filter does not terminate an already-running worker when its labels change. Linear applies the pickup filter to ID refreshes too, so removing the sole included label can make an active worker stop during reconciliation. By contrast, `tracker.required_labels` is an all-of routability gate: removing one blocks new dispatches and due retries, and the worker stops before its next turn after a refreshed tracker read reports the issue is no longer routable. Label comparison is case-insensitive and ignores surrounding whitespace, so labels that differ only by case or outer whitespace cannot be used as separate gates.
-
-Linear orchestration is polling-only. There is intentionally no Linear webhook setup command; state transitions, workpad comments, and PR handoff policy belong in `WORKFLOW.md`. See `docs/examples/linear-WORKFLOW.md` for a complete example.
+GitHub workflows may configure `tracker.provider.pickup_labels.include` and `tracker.provider.pickup_labels.exclude` as candidate filters. Excluded labels always win; when include labels are configured, an issue needs any one include label before it is considered for dispatch. On GitHub, this pre-filter does not terminate an already-running worker when its labels change. By contrast, `tracker.required_labels` is an all-of routability gate: removing one blocks new dispatches and due retries, and the worker stops before its next turn after a refreshed tracker read reports the issue is no longer routable. Label comparison is case-insensitive and ignores surrounding whitespace, so labels that differ only by case or outer whitespace cannot be used as separate gates.
 
 Workers log structured diagnostics when a between-turn tracker refresh fails, including the HTTP status, provider error, or exception message. Transient failures retain the configured consecutive-failure threshold. If an adapter permanently rejects state reads with `tracker_state_requests_unsupported`, the worker emits one capability warning and continues turns without the unavailable tracker gate.
 
@@ -605,7 +581,7 @@ gh-symphony config edit             # Open config in $EDITOR
 
 ### Diagnostics
 
-`gh-symphony doctor` runs a single first-run diagnostic pass and exits non-zero if any required prerequisite is missing. `gh-symphony doctor --fix` adds a remediation pass on top of the same checks. `gh-symphony doctor --smoke` is the recommended final preflight before `gh-symphony project start --project-dir <path> --once`: it resolves the active managed project, reads a target issue through the configured tracker integration, renders `WORKFLOW.md` for that issue, verifies the runtime command, workspace root, and configured hook paths, and exits without dispatching a worker. GitHub projects retain the GitHub Project read path and require `owner/repo#number` for explicit issues; Linear projects read through the Linear adapter, use identifiers such as `DEV-54`, and do not require a GitHub Project binding.
+`gh-symphony doctor` runs a single first-run diagnostic pass and exits non-zero if any required prerequisite is missing. `gh-symphony doctor --fix` adds a remediation pass on top of the same checks. `gh-symphony doctor --smoke` is the recommended final preflight before `gh-symphony project start --project-dir <path> --once`: it resolves the active managed project, reads a target issue through the configured tracker integration, renders `WORKFLOW.md` for that issue, verifies the runtime command, workspace root, and configured hook paths, and exits without dispatching a worker. GitHub projects retain the GitHub Project read path and require `owner/repo#number` for explicit issues.
 
 When cwd is a project folder whose runtime config was cached by `project start`,
 `doctor` and live `workflow preview` resolve that project. Explicit
@@ -831,7 +807,7 @@ gh-symphony workflow init --non-interactive --project PVT_xxx --dry-run
 
 `gh-symphony workflow validate` parses the target file, strictly renders the prompt body and continuation guidance with canonical sample variables, validates hook path syntax and any immediately resolvable hook scripts, and prints a compact runtime/lifecycle summary. Repository-relative run hooks are reported as deferred until an issue workspace is available. Its `runtime.timeouts.*` values are the effective runtime settings: each explicit runtime timeout takes precedence over its legacy `codex.*_timeout_ms` counterpart, omitted runtime fields inherit legacy values, and documented defaults apply when neither is configured. The source printed beside each field reflects that field's precedence result, including mixed-source timeout blocks.
 
-`gh-symphony workflow preview --issue owner/repo#123` is the fastest validation step after `workflow init`: it resolves the active managed project (or `--project-id`) and renders the exact worker prompt from the live GitHub Project issue. Linear workflows can preview a single issue with `gh-symphony workflow preview ENG-123`, which routes through the configured Linear tracker adapter and `LINEAR_API_KEY`. Keep `--sample <path-to-json>` for fixture-based debugging, and use `--attempt <n>` to inspect retry prompts before changing policy files.
+`gh-symphony workflow preview --issue owner/repo#123` is the fastest validation step after `workflow init`: it resolves the active managed project (or `--project-id`) and renders the exact worker prompt from the live GitHub Project issue. Keep `--sample <path-to-json>` for fixture-based debugging, and use `--attempt <n>` to inspect retry prompts before changing policy files.
 
 ### Workflow policy source
 
@@ -1034,7 +1010,7 @@ pnpm build
 
 GitHub Symphony is intended for trusted, operator-controlled environments.
 Codex, Claude, and default custom coding-agent children receive no raw GitHub
-or Linear tracker credential and no token-broker secret, including in
+tracker credential and no token-broker secret, including in
 brokerless deployments. Their runtime-owned `HOME` and `GH_CONFIG_DIR` do not expose the operator's
 `gh auth` store or credential-helper configuration. Codex provider tools execute
 through host dynamic tools; Claude's generated MCP configuration contains only
@@ -1047,7 +1023,7 @@ daemon-resolved tracker identity for polling and host tools without restoring
 blanket environment inheritance. Host Git publication uses that direct
 credential and fails closed when it is unavailable; reserved GitHub broker
 variables are not a publication fallback.
-GitHub and Linear workers fail startup before launching an agent when this
+GitHub workers fail startup before launching an agent when this
 effective environment has no provider credential. Candidate dispatch is also
 skipped when the orchestrator can determine the credential is missing, and
 `project status` expose the remediation in `warnings`.

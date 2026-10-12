@@ -25,19 +25,6 @@ export function resolveTrackerCredentialPreflight(
 ): TrackerCredentialPreflightResult {
   const adapter = env.SYMPHONY_TRACKER_ADAPTER?.trim().toLowerCase();
 
-  if (adapter === "linear") {
-    if (hasValue(env.LINEAR_AUTHORIZATION) || hasValue(env.LINEAR_API_KEY)) {
-      return { ok: true };
-    }
-
-    return {
-      ok: false,
-      reason:
-        "Worker Linear credential preflight failed: LINEAR_AUTHORIZATION or LINEAR_API_KEY is required. " +
-        remediation(env),
-    };
-  }
-
   if (adapter === "github-project" || adapter === "github") {
     if (hasValue(env.GITHUB_GRAPHQL_TOKEN)) {
       return { ok: true };
