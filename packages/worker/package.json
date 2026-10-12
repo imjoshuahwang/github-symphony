@@ -48,7 +48,6 @@
   },
   "dependencies": {
     "@gh-symphony/core": "workspace:*",
-    "@gh-symphony/extension-github-workflow": "workspace:*",
     "@gh-symphony/runtime-claude": "workspace:*",
     "@gh-symphony/runtime-codex": "workspace:*",
     "@gh-symphony/tool-github-graphql": "workspace:*",
