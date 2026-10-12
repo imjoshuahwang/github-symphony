@@ -87,17 +87,6 @@ afterEach(() => {
   process.exitCode = undefined;
 });
 
-function setTty(input: boolean, output: boolean): void {
-  Object.defineProperty(process.stdin, "isTTY", {
-    value: input,
-    configurable: true,
-  });
-  Object.defineProperty(process.stdout, "isTTY", {
-    value: output,
-    configurable: true,
-  });
-}
-
 describe("lifecycle command integration", () => {
   it("auto-selects the only configured project when start omits --project-id", async () => {
     const configDir = await createConfigFixture({
