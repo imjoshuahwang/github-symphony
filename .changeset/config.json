@@ -17,7 +17,6 @@
     "@gh-symphony/worker",
     "@gh-symphony/runtime-codex",
     "@gh-symphony/tracker-github",
-    "@gh-symphony/tracker-file",
-    "@gh-symphony/extension-github-workflow"
+    "@gh-symphony/tracker-file"
   ]
 }
