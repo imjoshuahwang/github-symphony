@@ -20,7 +20,6 @@ exports[`help output > renders the colored grouped help snapshot 1`] = `
   [36mproject stop[0m                Stop the standalone project orchestrator
 
 [33m[1mMaintenance:[0m[0m
-  [36mupgrade[0m                     Upgrade the CLI to the latest published version
   [36mcompletion <shell>[0m          Print shell completion (bash/zsh/fish)
   [36mversion[0m                     Show version
   [36mhelp [command][0m              Show help for a command
@@ -56,7 +55,6 @@ Orchestration (standalone project):
   project stop                Stop the standalone project orchestrator
 
 Maintenance:
-  upgrade                     Upgrade the CLI to the latest published version
   completion <shell>          Print shell completion (bash/zsh/fish)
   version                     Show version
   help [command]              Show help for a command

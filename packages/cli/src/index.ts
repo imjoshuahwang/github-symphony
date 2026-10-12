@@ -11,7 +11,6 @@ import { setNoColor } from "./ansi.js";
 import { resolveConfigDir } from "./config.js";
 import { renderCompletionScript } from "./completion.js";
 import { renderHelp } from "./commands/help.js";
-import { createRemovedCommandHandler } from "./commands/removed-command.js";
 import { writeCliError } from "./cli-error.js";
 
 export type GlobalOptions = {
@@ -37,7 +36,6 @@ type LoaderKey =
   | "workflow"
   | "setup"
   | "doctor"
-  | "upgrade"
   | "project"
   | "config"
   | "version";
@@ -71,7 +69,6 @@ type CliOptionValues = Partial<
     skipContext?: boolean;
     skipSkills?: boolean;
     version?: boolean;
-    web?: string | boolean;
     repoDir?: string;
     workflowFile?: string;
     workflow?: string;
@@ -89,7 +86,6 @@ const COMMANDS: Record<LoaderKey, () => Promise<{ default: CommandHandler }>> =
     workflow: () => import("./commands/workflow.js"),
     setup: () => import("./commands/setup.js"),
     doctor: () => import("./commands/doctor.js"),
-    upgrade: () => import("./commands/upgrade.js"),
     project: () => import("./commands/project.js"),
     config: () => import("./commands/config-cmd.js"),
     version: () => import("./commands/version.js"),
@@ -174,13 +170,6 @@ async function invokeHandler(
 ): Promise<void> {
   const module = await COMMANDS[key]();
   await module.default(args, resolveGlobalOptions(values));
-}
-
-async function invokeRemovedCommand(
-  message: string,
-  values: CliOptionValues
-): Promise<void> {
-  await createRemovedCommandHandler(message)([], resolveGlobalOptions(values));
 }
 
 function shellArgument(value: string): "bash" | "zsh" | "fish" {
@@ -290,25 +279,6 @@ function renderRootHelp(command: Command): string {
   return renderHelp({ color: !noColor });
 }
 
-function registerRemovedCommand(
-  program: Command,
-  commandSpec: string,
-  message: string,
-  markInvoked: () => void
-): void {
-  const handler = createRemovedCommandHandler(message);
-  addGlobalOptions(
-    program
-      .command(commandSpec, { hidden: true })
-      .allowUnknownOption(true)
-      .allowExcessArguments(true)
-  ).action(async function (this: Command) {
-    markInvoked();
-    const values = this.optsWithGlobals<CliOptionValues>();
-    await handler([], resolveGlobalOptions(values));
-  });
-}
-
 function createProgram(): { program: Command; wasInvoked: () => boolean } {
   let actionInvoked = false;
   const markInvoked = () => {
@@ -326,13 +296,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
       .option("-V, --version", "Show version")
   );
   program.helpInformation = () => renderRootHelp(program);
-
-  registerRemovedCommand(
-    program,
-    "init",
-    "Use 'gh-symphony workflow init'.",
-    markInvoked
-  );
 
   const workflow = addGlobalOptions(
     program
@@ -482,59 +445,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
     await invokeHandler("doctor", args, values);
   });
 
-  addGlobalOptions(
-    program
-      .command("upgrade")
-      .description("Upgrade the CLI to the latest published version")
-      .allowExcessArguments(false)
-  ).action(async function (this: Command) {
-    markInvoked();
-    await invokeHandler("upgrade", [], this.optsWithGlobals<CliOptionValues>());
-  });
-
-  registerRemovedCommand(
-    program,
-    "start",
-    "Use 'gh-symphony project start --project-dir <path>'.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "stop",
-    "Use 'gh-symphony project stop --project-dir <path>'.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "status",
-    "Use 'gh-symphony project status --project-dir <path>'.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "run",
-    "The 'run' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "recover",
-    "The 'recover' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "logs",
-    "The 'logs' command has been removed. See packages/cli/README.md#repository-command-migration.",
-    markInvoked
-  );
-  registerRemovedCommand(
-    program,
-    "instances",
-    "Use 'gh-symphony project list' and 'gh-symphony project status --project-dir <path>'.",
-    markInvoked
-  );
-
   const project = addGlobalOptions(
     program.command("project").description("Manage standalone projects")
   );
@@ -567,10 +477,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
         "--http [port]",
         "Expose the JSON status API and refresh endpoints over HTTP"
       )
-      .option(
-        "--web [port]",
-        "Expose the control plane web dashboard and API over HTTP"
-      )
       .option("--log-level <level>", "Orchestrator lifecycle log level")
       .option("--project-dir <path>", "Project folder (defaults to cwd)")
       .allowExcessArguments(false)
@@ -584,7 +490,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
     pushOption(args, "--bind-all", values.bindAll);
     pushOption(args, "--port", values.port);
     pushOption(args, "--http", values.http);
-    pushOption(args, "--web", values.web);
     pushOption(args, "--log-level", values.logLevel);
     pushOption(args, "--project-dir", values.projectDir);
     await invokeHandler("project", args, values);
@@ -602,22 +507,6 @@ function createProgram(): { program: Command; wasInvoked: () => boolean } {
       );
     });
   }
-
-  addGlobalOptions(
-    program
-      .command("repo")
-      .description("Deprecated repository command surface")
-      .helpOption(false)
-      .argument("[args...]")
-      .allowUnknownOption(true)
-      .allowExcessArguments(true)
-  ).action(async function (this: Command) {
-    markInvoked();
-    await invokeRemovedCommand(
-      "The 'repo' command has been removed. Use 'gh-symphony project start --project-dir <path>'.\nMigration: packages/cli/README.md#repository-command-migration",
-      this.optsWithGlobals<CliOptionValues>()
-    );
-  });
 
   const config = addGlobalOptions(
     program.command("config").description("Manage CLI configuration")

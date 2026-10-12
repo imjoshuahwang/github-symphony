@@ -46,7 +46,6 @@ import {
   isAuthorizedApiRequest,
   resolveDashboardResponse,
 } from "@gh-symphony/dashboard";
-import { startControlPlaneServer } from "@gh-symphony/control-plane";
 import { resolveRuntimeRoot } from "../orchestrator-runtime.js";
 import {
   handleMissingManagedProjectConfig,
@@ -394,7 +393,6 @@ function parseStartArgs(args: string[]): {
   httpPort?: number;
   httpPortExplicit: boolean;
   httpOption?: "--http" | "--port";
-  webPort?: number;
   logLevel?: string;
   error?: string;
 } {
@@ -406,7 +404,6 @@ function parseStartArgs(args: string[]): {
     httpPort?: number;
     httpPortExplicit: boolean;
     httpOption?: "--http" | "--port";
-    webPort?: number;
     logLevel?: string;
     error?: string;
   } = {
@@ -446,16 +443,6 @@ function parseStartArgs(args: string[]): {
       i += 1;
       continue;
     }
-    if (arg === "--web") {
-      const value = args[i + 1];
-      if (!value || value.startsWith("-")) {
-        parsed.webPort = DEFAULT_HTTP_PORT;
-        continue;
-      }
-      parsed.webPort = parsePort(value, arg);
-      i += 1;
-      continue;
-    }
     if (arg === "--log-level") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
@@ -470,10 +457,6 @@ function parseStartArgs(args: string[]): {
       parsed.error = `Unknown option '${arg}'`;
       return parsed;
     }
-  }
-
-  if (parsed.httpPort !== undefined && parsed.webPort !== undefined) {
-    parsed.error = `Options '${parsed.httpOption ?? "--http"}' and '--web' cannot be used together`;
   }
 
   return parsed;
@@ -1048,7 +1031,7 @@ const handler = async (
   if (parsed.error) {
     process.stderr.write(`${parsed.error}\n`);
     process.stderr.write(
-      "Usage: gh-symphony project start [--project-dir <path>] [--daemon] [--once] [--assigned-only] [--port [port]] [--http [port]] [--web [port]] [--bind-all]\n"
+      "Usage: gh-symphony project start [--project-dir <path>] [--daemon] [--once] [--assigned-only] [--port [port]] [--http [port]] [--bind-all]\n"
     );
     process.exitCode = 2;
     return;
@@ -1105,10 +1088,7 @@ const handler = async (
   if (!workflowPreflight.ok) {
     return;
   }
-  const configuredServerPort =
-    parsed.webPort === undefined
-      ? workflowPreflight.workflow?.server.port
-      : undefined;
+  const configuredServerPort = workflowPreflight.workflow?.server.port;
   const requestedHttpPort = parsed.httpPortExplicit
     ? parsed.httpPort
     : (configuredServerPort ?? parsed.httpPort);
@@ -1125,7 +1105,6 @@ const handler = async (
       parsed.logLevel ?? (options.verbose ? "verbose" : undefined),
       requestedHttpPort,
       explicitHttpPort,
-      parsed.webPort,
       parsed.assignedOnly === true,
       parsed.bindAll,
       httpApiToken,
@@ -1204,10 +1183,8 @@ const handler = async (
     let shuttingDown = false;
     let shutdownPromise: Promise<never> | null = null;
     let keepHttpAliveResolve: (() => void) | null = null;
-    let httpServer:
-      | Awaited<ReturnType<typeof startControlPlaneServer>>
-      | Awaited<ReturnType<typeof startHttpServer>>
-      | null = null;
+    let httpServer: Awaited<ReturnType<typeof startHttpServer>> | null =
+      null;
     let workerHttpServer: Awaited<ReturnType<typeof startHttpServer>> | null =
       null;
     const shutdown = async () => {
@@ -1282,22 +1259,7 @@ const handler = async (
         await writeFile(readyPath, `${projectLock.pid}\n`, { mode: 0o600 });
       }
 
-      httpServer =
-        parsed.webPort !== undefined
-          ? await startControlPlaneServer({
-              host: httpHost,
-              port: parsed.webPort,
-              runtimeRoot: join(
-                runtimeRoot,
-                "projects",
-                encodeURIComponent(projectId)
-              ),
-              apiToken: httpApiToken,
-              onRefreshRequest: () => service.requestReconcile(),
-            })
-          : requestedHttpPort !== undefined
-            ? workerHttpServer
-            : null;
+      httpServer = requestedHttpPort !== undefined ? workerHttpServer : null;
       logLine(
         green("\u25B2"),
         `Starting orchestrator for project: ${bold(projectId)}`
@@ -1305,17 +1267,11 @@ const handler = async (
       if (httpServer) {
         logLine(
           cyan("\u25A1"),
-          parsed.webPort !== undefined
-            ? `Web dashboard listening on ${httpServer.url}`
-            : `HTTP status API listening on ${httpServer.url}`
+          `HTTP status API listening on ${httpServer.url}`
         );
         logLine(
           cyan("\u25A1"),
-          parsed.webPort !== undefined
-            ? `Open ${httpServer.url}/#token=${encodeURIComponent(
-                httpApiToken
-              )}`
-            : `Bearer token: ${httpApiToken}`
+          `Bearer token: ${httpApiToken}`
         );
       }
       logLine(
@@ -1337,9 +1293,7 @@ const handler = async (
             if (httpServer) {
               logLine(
                 cyan("\u25A1"),
-                parsed.webPort !== undefined
-                  ? "One-shot tick completed; web dashboard remains available until Ctrl+C"
-                  : "One-shot tick completed; HTTP status API remains available until Ctrl+C"
+                "One-shot tick completed; HTTP status API remains available until Ctrl+C"
               );
               if (shuttingDown) {
                 break;
@@ -1507,7 +1461,6 @@ async function startDaemon(
   logLevel?: string,
   httpPort?: number,
   httpPortExplicit = false,
-  webPort?: number,
   assignedOnly = false,
   bindAll = false,
   httpApiToken = resolveHttpApiToken(),
@@ -1539,7 +1492,6 @@ async function startDaemon(
           ? ["--port", String(httpPort)]
           : ["--http"]
         : []),
-      ...(webPort !== undefined ? ["--web", String(webPort)] : []),
       ...(logLevel ? ["--log-level", logLevel] : []),
     ],
     {
@@ -1588,7 +1540,7 @@ async function startDaemon(
       `Logs: ${logPath}\n` +
       "Stop with: gh-symphony project stop\n"
   );
-  if (httpPort !== undefined || webPort !== undefined) {
+  if (httpPort !== undefined) {
     process.stdout.write(`HTTP API bearer token: ${httpApiToken}\n`);
   }
 }

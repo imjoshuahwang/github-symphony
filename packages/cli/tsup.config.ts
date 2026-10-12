@@ -8,7 +8,6 @@ const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    "management-local": "src/management-local.ts",
     "worker-entry": "src/worker-entry.ts",
     "mcp-server": "src/mcp-server.ts",
     "git-credential-helper": "src/git-credential-helper.ts",
@@ -21,7 +20,6 @@ export default defineConfig({
   dts: {
     entry: {
       index: "src/index.ts",
-      "management-local": "src/management-local.ts",
     },
   },
   banner: {

@@ -56,9 +56,7 @@ vi.mock("../github/gh-auth.js", async (importOriginal) => {
   };
 });
 
-const runModule = await import("./run.js");
 const startModule = await import("./start.js");
-const recoverModule = await import("./recover.js");
 const stopModule = await import("./stop.js");
 
 beforeEach(() => {
@@ -101,115 +99,6 @@ function setTty(input: boolean, output: boolean): void {
 }
 
 describe("lifecycle command integration", () => {
-  it("reads the selected project config directly from the project directory", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [
-        createTenant("tenant-a", "acme", "platform"),
-        createTenant("tenant-b", "beta", "api"),
-      ],
-    });
-
-    await runModule.default(
-      ["--project", "tenant-b", "beta/api#42"],
-      baseOptions(configDir)
-    );
-
-    expect(orchestratorRunCli).toHaveBeenCalledWith([
-      "run-issue",
-      "--runtime-root",
-      configDir,
-      "--project-id",
-      "tenant-b",
-      "--issue",
-      "beta/api#42",
-    ]);
-
-    const synced = JSON.parse(
-      await readFile(
-        join(configDir, "projects", "tenant-b", "project.json"),
-        "utf8"
-      )
-    ) as CliProjectConfig;
-    expect(synced.projectId).toBe("tenant-b");
-    expect(synced.repository).toMatchObject({
-      owner: "beta",
-      name: "api",
-    });
-    expect(synced).not.toHaveProperty("repositories");
-  });
-
-  it("forwards --log-level to orchestrator single-issue dispatch", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createTenant("tenant-a", "acme", "platform")],
-    });
-
-    await runModule.default(
-      ["--project", "tenant-a", "--log-level", "verbose", "acme/platform#42"],
-      baseOptions(configDir)
-    );
-
-    expect(orchestratorRunCli).toHaveBeenCalledWith([
-      "run-issue",
-      "--runtime-root",
-      configDir,
-      "--project-id",
-      "tenant-a",
-      "--issue",
-      "acme/platform#42",
-      "--log-level",
-      "verbose",
-    ]);
-  });
-
-  it("rejects missing --log-level values for single-issue dispatch", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createTenant("tenant-a", "acme", "platform")],
-    });
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
-
-    await runModule.default(
-      ["--project", "tenant-a", "--log-level", "--watch", "acme/platform#42"],
-      baseOptions(configDir)
-    );
-
-    expect(orchestratorRunCli).not.toHaveBeenCalled();
-    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(
-      "Option '--log-level' argument missing"
-    );
-    expect(process.exitCode).toBe(2);
-  });
-
-  it("prints JSON when repo run cannot find a runtime config", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "run-missing-config-"));
-    const stdout = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
-
-    await runModule.default(["acme/platform#42"], {
-      ...baseOptions(configDir),
-      json: true,
-    });
-
-    expect(orchestratorRunCli).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
-    expect(stderr).not.toHaveBeenCalled();
-    expect(JSON.parse(String(stdout.mock.calls[0]?.[0]))).toEqual({
-      error: {
-        code: "missing_repository_runtime_config",
-        message:
-          "No standalone project config found. Run 'gh-symphony project start --project-dir <path>' first.",
-      },
-    });
-  });
-
   it("auto-selects the only configured project when start omits --project-id", async () => {
     const configDir = await createConfigFixture({
       activeProject: "tenant-a",
@@ -241,32 +130,6 @@ describe("lifecycle command integration", () => {
       [process.argv[1], "project", "start"],
       expect.any(Object)
     );
-  });
-
-  it("preserves the cancel exit code when no active project selection is aborted", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: null,
-      projects: [
-        createTenant("tenant-a", "acme", "platform"),
-        createTenant("tenant-b", "beta", "api"),
-      ],
-    });
-    selectMock.mockResolvedValue(Symbol.for("clack-cancel"));
-    setTty(true, true);
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
-
-    await runModule.default(["acme/platform#7"], baseOptions(configDir));
-
-    expect(orchestratorRunCli).not.toHaveBeenCalled();
-    expect(cancelMock).toHaveBeenCalledWith("Cancelled.");
-    expect(
-      stderr.mock.calls.map((call) => String(call[0])).join("")
-    ).not.toContain(
-      "No standalone project config found. Run 'gh-symphony project start --project-dir <path>' first."
-    );
-    expect(process.exitCode).toBe(130);
   });
 
   it("rejects removed project selection flags in daemon mode", async () => {
@@ -548,49 +411,6 @@ describe("lifecycle command integration", () => {
     expect(process.exitCode).toBe(2);
   });
 
-  it("reports recoverable runs without invoking recovery in dry-run mode", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createTenant("tenant-a", "acme", "platform")],
-    });
-    const runDir = join(configDir, "projects", "tenant-a", "runs", "run-1");
-    await mkdir(runDir, { recursive: true });
-    await writeFile(
-      join(runDir, "run.json"),
-      JSON.stringify(
-        {
-          runId: "run-1",
-          projectId: "tenant-a",
-          issueIdentifier: "acme/platform#7",
-          status: "running",
-          processId: 999_999,
-          startedAt: new Date().toISOString(),
-          nextRetryAt: null,
-        },
-        null,
-        2
-      ) + "\n",
-      "utf8"
-    );
-
-    const stdout = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-
-    const isProcessRunning = vi.fn().mockReturnValue(false);
-
-    await recoverModule.default(["--dry-run"], baseOptions(configDir), {
-      isProcessRunning,
-    });
-
-    expect(orchestratorRunCli).not.toHaveBeenCalled();
-    expect(isProcessRunning).toHaveBeenCalledWith(999_999);
-    expect(
-      stdout.mock.calls.some((call) =>
-        String(call[0]).includes("acme/platform#7")
-      )
-    ).toBe(true);
-  });
 });
 
 function baseOptions(configDir: string) {

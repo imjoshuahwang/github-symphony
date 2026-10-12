@@ -37,7 +37,6 @@ const {
 const resolveDashboardResponse = vi.fn();
 const isAuthorizedApiRequest = vi.fn();
 const loadProjectState = vi.fn();
-const startControlPlaneServer = vi.fn();
 const HTTP_API_TOKEN = "test-http-api-token";
 const serviceDependencies: Array<Record<string, unknown>> = [];
 const serviceProjectConfigs: unknown[] = [];
@@ -107,10 +106,6 @@ vi.mock("@gh-symphony/dashboard", () => ({
   },
   resolveDashboardResponse,
   isAuthorizedApiRequest,
-}));
-
-vi.mock("@gh-symphony/control-plane", () => ({
-  startControlPlaneServer,
 }));
 
 vi.mock("@clack/prompts", async (importOriginal) => {
@@ -183,16 +178,11 @@ beforeEach(() => {
   loadProjectState.mockResolvedValue({
     activeRuns: [{ issueIdentifier: "acme/platform#1" }],
   });
-  startControlPlaneServer.mockReset();
   resolveDashboardResponse.mockImplementation(
     async ({ pathname, method }: { pathname: string; method?: string }) => ({
       status: 200,
       payload: { pathname, method: method ?? "GET" },
     })
-  );
-  startControlPlaneServer.mockImplementation(
-    async ({ port }: { port: number }) =>
-      createMockControlPlaneStartResult(port)
   );
   ghAuthMocks.resolveGitHubAuth.mockReset();
   ghAuthMocks.resolveGitHubAuth.mockResolvedValue({
@@ -909,28 +899,6 @@ Handle {{issue.identifier}}.\n`,
     );
     expect(acquireProjectLock).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(2);
-  });
-
-  it("rejects the conflicting --http --web combination", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createProject("tenant-a", "acme", "platform")],
-    });
-    const stderr = captureWrites(process.stderr);
-
-    try {
-      await startModule.default(["--http", "--web"], baseOptions(configDir));
-    } finally {
-      stderr.restore();
-    }
-
-    expect(stderr.output()).toContain(
-      "Options '--http' and '--web' cannot be used together"
-    );
-    expect(acquireProjectLock).not.toHaveBeenCalled();
-    expect(run).not.toHaveBeenCalled();
-    expect(startControlPlaneServer).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(2);
   });
 
@@ -1794,128 +1762,6 @@ Handle {{issue.identifier}}.\n`,
     expect(releaseProjectLock).toHaveBeenCalledWith(lock);
   });
 
-  it("starts the control plane server when --web is enabled", async () => {
-    process.env.GH_SYMPHONY_HTTP_TOKEN = "custom+token&value%#";
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createProject("tenant-a", "acme", "platform")],
-    });
-    const lock = {
-      lockPath: join(configDir, ".lock"),
-      ownerToken: "owner",
-      pid: 1234,
-      startedAt: "2026-03-17T00:00:00.000Z",
-    };
-    acquireProjectLock.mockResolvedValue(lock);
-    let resolveRun: (() => void) | undefined;
-    run.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveRun = resolve;
-        })
-    );
-    shutdown.mockImplementation(async () => {
-      resolveRun?.();
-    });
-
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(
-        ((_code?: number) => undefined) as (code?: number) => never
-      );
-    const stdout = captureWrites(process.stdout);
-
-    try {
-      const startPromise = startModule.default(
-        ["--web"],
-        baseOptions(configDir)
-      );
-
-      await waitForHttpUrl(stdout.output);
-      expect(startControlPlaneServer).toHaveBeenCalledWith({
-        host: "127.0.0.1",
-        port: 4680,
-        runtimeRoot: join(configDir, "projects", "tenant-a"),
-        apiToken: "custom+token&value%#",
-        onRefreshRequest: expect.any(Function),
-      });
-
-      expect(stdout.output()).toContain("Web dashboard listening on");
-      expect(stdout.output()).toContain("#token=custom%2Btoken%26value%25%23");
-      expect(stdout.output()).not.toContain("#token=custom+token&value%#");
-
-      const onRefreshRequest = (
-        startControlPlaneServer.mock.calls[0]?.[0] as
-          | { onRefreshRequest?: () => void }
-          | undefined
-      )?.onRefreshRequest;
-      if (!onRefreshRequest) {
-        throw new Error("Expected onRefreshRequest callback");
-      }
-      onRefreshRequest();
-      expect(requestReconcile).toHaveBeenCalledTimes(1);
-
-      process.emit("SIGINT");
-      await startPromise;
-    } finally {
-      stdout.restore();
-    }
-
-    expect(exitSpy).toHaveBeenCalledWith(0);
-    expect(releaseProjectLock).toHaveBeenCalledWith(lock);
-    expect(resolveDashboardResponse).not.toHaveBeenCalled();
-  });
-
-  it("passes an explicit port and --bind-all to the control plane server", async () => {
-    const configDir = await createConfigFixture({
-      activeProject: "tenant-a",
-      projects: [createProject("tenant-a", "acme", "platform")],
-    });
-    const lock = {
-      lockPath: join(configDir, ".lock"),
-      ownerToken: "owner",
-      pid: 1234,
-      startedAt: "2026-03-17T00:00:00.000Z",
-    };
-    acquireProjectLock.mockResolvedValue(lock);
-    let resolveRun: (() => void) | undefined;
-    run.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveRun = resolve;
-        })
-    );
-    shutdown.mockImplementation(async () => {
-      resolveRun?.();
-    });
-
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(
-        ((_code?: number) => undefined) as (code?: number) => never
-      );
-
-    const startPromise = startModule.default(
-      ["--web", "4900", "--bind-all"],
-      baseOptions(configDir)
-    );
-
-    await vi.waitFor(() => {
-      expect(startControlPlaneServer).toHaveBeenCalledWith({
-        host: "0.0.0.0",
-        port: 4900,
-        runtimeRoot: join(configDir, "projects", "tenant-a"),
-        apiToken: HTTP_API_TOKEN,
-        onRefreshRequest: expect.any(Function),
-      });
-    });
-
-    process.emit("SIGINT");
-    await startPromise;
-
-    expect(exitSpy).toHaveBeenCalledWith(0);
-  });
-
   it("closes the HTTP status API when a one-shot startup fails", async () => {
     const configDir = await createConfigFixture({
       activeProject: "tenant-a",
@@ -2435,32 +2281,6 @@ async function waitForHttpUrl(
   }
 
   throw new Error(`Timed out waiting for HTTP server log. Output: ${output()}`);
-}
-
-async function createMockControlPlaneStartResult(_port: number): Promise<{
-  server: ReturnType<typeof createServer>;
-  port: number;
-  url: string;
-}> {
-  const server = createServer((_, response) => {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ok: true }));
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, "0.0.0.0", () => resolve());
-  });
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected TCP address");
-  }
-
-  return {
-    server,
-    port: address.port,
-    url: `http://localhost:${address.port}`,
-  };
 }
 
 async function fetchJsonWithRetry(
