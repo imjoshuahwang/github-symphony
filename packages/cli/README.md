@@ -285,26 +285,6 @@ prints the normalized provider block for migration.
 
 Run `gh-symphony workflow validate` for local schema errors, hook path syntax errors, immediately resolvable missing or non-executable hook scripts, and warnings. Repository-relative run hooks are reported as deferred until an issue workspace is available. Ignored `agent.max_concurrent_agents_by_state` entries warn with their paths and reasons, while valid entries in the same map remain active; `gh-symphony doctor` reports the same warning alongside live drift checks such as missing Project fields, missing labels, unmapped live options, stale mappings, and active issues whose priority-like value resolves to `priority = null`. Strict front-matter failures use stable workflow error codes; `workflow validate --json` also emits the failing `error.path`.
 
-### Linear Tracker Projects
-
-For Linear, configure the tracker in the project folder's `WORKFLOW.md`:
-
-```yaml
-tracker:
-  kind: linear
-  provider:
-    api_key: $LINEAR_API_KEY
-    project_slug: symphony-0c79b11b75ea
-```
-
-`gh-symphony setup` validates `tracker.provider.project_slug` and resolves `tracker.provider.api_key` when supplied. If it is omitted, startup uses `LINEAR_API_KEY`. Flat keys are rejected; `.gh-symphony/config.json` is not a Linear source of truth.
-
-Linear runs are polling-only. There is no webhook setup command. Put state transition, workpad comment, and PR handoff policy in `WORKFLOW.md`; see `docs/examples/linear-WORKFLOW.md` in the repository for a complete example. Preview a Linear issue prompt with:
-
-```bash
-gh-symphony workflow preview ENG-123
-```
-
 ### Project `.env` Mapping
 
 Symphony-specific values belong in the project folder's `.env`, which is merged
@@ -534,7 +514,7 @@ restart; additive JSON status reports applied versus pending settings and safe
 exporter health separately from coordination errors. See the
 [OTLP configuration contract](../../docs/configuration.md#otlp-workflow-policy-exporter-support-pending).
 
-`gh-symphony doctor` validates the most common first-run prerequisites in one pass. `gh-symphony doctor --smoke` is the recommended final preflight before `gh-symphony project start --project-dir <path> --once`: it resolves the active managed project, reads a target issue through the configured tracker integration, renders `WORKFLOW.md` for that issue, verifies the runtime command, workspace root, and configured hook paths, and exits without dispatching a worker. GitHub projects retain the GitHub Project read path and require `owner/repo#number` for explicit issues; Linear projects read through the Linear adapter, use identifiers such as `DEV-54`, and do not require a GitHub Project binding.
+`gh-symphony doctor` validates the most common first-run prerequisites in one pass. `gh-symphony doctor --smoke` is the recommended final preflight before `gh-symphony project start --project-dir <path> --once`: it resolves the active managed project, reads a target issue through the configured tracker integration, renders `WORKFLOW.md` for that issue, verifies the runtime command, workspace root, and configured hook paths, and exits without dispatching a worker. GitHub projects retain the GitHub Project read path and require `owner/repo#number` for explicit issues.
 
 Use an explicit issue when you want a deterministic check:
 

@@ -20,7 +20,6 @@ describe("buildCustomRuntimeChildEnvironment", () => {
         SYMPHONY_ASSIGNED_BRANCH: "symphony/acme-42",
         SYMPHONY_ISSUE_IDENTIFIER: "acme/repo#42",
         GITHUB_TOKEN: "github-secret",
-        LINEAR_API_KEY: "linear-secret",
         GITHUB_TOKEN_BROKER_SECRET: "broker-secret",
         AGENT_CREDENTIAL_BROKER_SECRET: "agent-broker-secret",
         GIT_CONFIG_KEY_0: "credential.helper",
@@ -28,7 +27,6 @@ describe("buildCustomRuntimeChildEnvironment", () => {
         SYMPHONY_TRACKER_SECRET_ENVIRONMENT_NAMES: JSON.stringify([
           "GITHUB_TOKEN",
           "GITHUB_TOKEN_BROKER_SECRET",
-          "LINEAR_API_KEY",
           "TRACKER_SECRET",
         ]),
         TRACKER_SECRET: "tracker-secret",
@@ -49,7 +47,6 @@ describe("buildCustomRuntimeChildEnvironment", () => {
     });
     for (const name of [
       "GITHUB_TOKEN",
-      "LINEAR_API_KEY",
       "GITHUB_TOKEN_BROKER_SECRET",
       "AGENT_CREDENTIAL_BROKER_SECRET",
       "GIT_CONFIG_KEY_0",
@@ -158,15 +155,13 @@ describe("custom runtime reserved-auth provenance", () => {
   it.each([
     ["an empty declaration", []],
     ["another tracker's declaration", ["CUSTOM_TRACKER_SECRET"]],
-  ])("blocks the seven fallback names with %s", (_label, declarations) => {
+  ])("blocks the five fallback names with %s", (_label, declarations) => {
     const names = [
       "GH_ENTERPRISE_TOKEN",
       "GH_TOKEN",
       "GITHUB_GRAPHQL_TOKEN",
       "GITHUB_TOKEN",
       "GITHUB_TOKEN_BROKER_SECRET",
-      "LINEAR_API_KEY",
-      "LINEAR_AUTHORIZATION",
     ];
 
     for (const name of names) {

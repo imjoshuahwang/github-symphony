@@ -20,18 +20,7 @@ export type GenerateWorkflowInput = {
     slug: string;
     cloneUrl?: string;
   };
-  tracker?:
-    | { kind: "github-project" }
-    | {
-        kind: "linear";
-        endpoint?: string;
-        apiKey?: string;
-        projectSlug: string;
-        pickupLabels?: {
-          include?: string[];
-          exclude?: string[];
-        };
-      };
+  tracker?: { kind: "github-project" };
   stateFieldName: string;
   priority: WorkflowPriorityConfig | null;
   includePriorityTemplates?: boolean;
@@ -111,18 +100,11 @@ function buildTrackerFrontMatter(
   const tracker: Record<string, YamlFrontMatterNode> = {
     kind: input.tracker?.kind ?? "github-project",
   };
-  if (input.tracker?.kind === "linear") {
-    provider.endpoint =
-      input.tracker.endpoint ?? "https://api.linear.app/graphql";
-    provider.api_key = input.tracker.apiKey ?? "$LINEAR_API_KEY";
-    provider.project_slug = input.tracker.projectSlug;
-  } else {
-    provider.project_id = input.projectId;
-    provider.state_field = input.stateFieldName;
-    const priority = buildPriorityFrontMatter(input);
-    if (priority) {
-      provider.priority = priority;
-    }
+  provider.project_id = input.projectId;
+  provider.state_field = input.stateFieldName;
+  const priority = buildPriorityFrontMatter(input);
+  if (priority) {
+    provider.priority = priority;
   }
 
   if (input.lifecycle.activeStates.length > 0) {
@@ -134,21 +116,6 @@ function buildTrackerFrontMatter(
   }
 
   tracker.provider = provider;
-
-  if (input.tracker?.kind === "linear") {
-    const include = input.tracker.pickupLabels?.include ?? [];
-    const exclude = input.tracker.pickupLabels?.exclude ?? [];
-    if (include.length > 0 || exclude.length > 0) {
-      const pickupLabels: Record<string, YamlFrontMatterNode> = {};
-      if (include.length > 0) {
-        pickupLabels.include = include;
-      }
-      if (exclude.length > 0) {
-        pickupLabels.exclude = exclude;
-      }
-      provider.pickup_labels = pickupLabels;
-    }
-  }
 
   provider.blocker_check_states = input.lifecycle.blockerCheckStates ?? [];
   provider.planning_states = input.lifecycle.planningStates;

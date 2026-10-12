@@ -76,7 +76,7 @@ describe("GitHub canonical subject adapter hook", () => {
   it("rejects a tool not owned by the GitHub adapter", async () => {
     await expect(
       githubProjectTrackerAdapter.executeAgentTool?.(
-        "linear_graphql",
+        "other_tracker_graphql",
         {},
         {
           issue: {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -573,7 +573,7 @@ Prompt`,
   it("uses provider values consistently when deprecated flat keys coexist", () => {
     const workflow = parseWorkflowMarkdownForMigration(`---
 tracker:
-  kind: linear
+  kind: github-project
   project_id: flat-project
   api_key: flat-key
   endpoint: https://flat.example.test
@@ -684,19 +684,6 @@ Prompt`,
     );
   });
 
-  it("loads the bundled Linear example with deprecated lifecycle defaults", async () => {
-    const markdown = await readFile(
-      new URL("../../../docs/examples/linear-WORKFLOW.md", import.meta.url),
-      "utf8"
-    );
-    const workflow = parseWorkflowMarkdown(markdown, {
-      LINEAR_API_KEY: "test-key",
-    } as NodeJS.ProcessEnv);
-
-    expect(workflow.lifecycle).toMatchObject({ stateFieldName: "Status" });
-    expect(workflow.tracker.projectSlug).toBe("symphony-0c79b11b75ea");
-  });
-
   it("preserves lifecycle defaults until adapters provide their own", () => {
     const workflow = parseWorkflowMarkdown(`---
 tracker:
@@ -757,7 +744,7 @@ Prompt`)
       parseWorkflowMarkdownForMigration(
         `---
 tracker:
-  kind: linear
+  kind: github-project
   api_key: $MISSING_TRACKER_TOKEN
 codex:
   command: codex
@@ -1239,62 +1226,6 @@ Prompt body.
     expect(workflow.agent.maxFailureRetries).toBe(10);
   });
 
-  it("parses Linear tracker config with default endpoint", () => {
-    const workflow = parseWorkflowMarkdown(
-      `---
-tracker:
-  kind: linear
-  provider:
-    project_slug: symphony-0c79b11b75ea
-    api_key: $LINEAR_API_KEY
-  active_states:
-    - Todo
-    - In Progress
-codex:
-  command: codex app-server
----
-Prompt body.
-`,
-      { LINEAR_API_KEY: "lin_api_key" } as NodeJS.ProcessEnv
-    );
-
-    expect(workflow.tracker.kind).toBe("linear");
-    expect(workflow.tracker.projectSlug).toBe("symphony-0c79b11b75ea");
-    expect(workflow.tracker.endpoint).toBe("https://api.linear.app/graphql");
-    expect(workflow.tracker.apiKey).toBe("lin_api_key");
-    expect(workflow.tracker.projectId).toBeNull();
-  });
-
-  it("parses Linear pickup label eligibility config", () => {
-    const workflow = parseWorkflowMarkdown(
-      `---
-tracker:
-  kind: linear
-  provider:
-    project_slug: symphony-0c79b11b75ea
-    pickup_labels:
-      include:
-        - " Agent "
-        - dev-ready
-        - agent
-        - " "
-      exclude:
-        - " NO-AGENT "
-        - needs-spec
-        - no-agent
-codex:
-  command: codex app-server
----
-Prompt body.
-`
-    );
-
-    expect(workflow.tracker.pickupLabels).toEqual({
-      include: ["agent", "dev-ready"],
-      exclude: ["no-agent", "needs-spec"],
-    });
-  });
-
   it("normalizes required labels while preserving blank labels", () => {
     const workflow = parseWorkflowMarkdown(`---
 tracker:
@@ -1356,7 +1287,7 @@ Prompt body.
       parseWorkflowMarkdown(
         `---
 tracker:
-  kind: linear
+  kind: github-project
   active_states:
     - Todo
   terminal_states:

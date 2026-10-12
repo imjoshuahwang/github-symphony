@@ -180,12 +180,9 @@ describe("createWorkerNonCodexRuntimeAdapter", () => {
           GIT_CONFIG_VALUE_0: "!/operator/credential-helper",
           SYMPHONY_TRACKER_SECRET_ENVIRONMENT_NAMES: JSON.stringify([
             "GITHUB_GRAPHQL_TOKEN",
-            "LINEAR_API_KEY",
             "CUSTOM_TRACKER_SECRET",
           ]),
           GITHUB_GRAPHQL_TOKEN: "raw-secret",
-          LINEAR_API_KEY: "linear-secret",
-          LINEAR_AUTHORIZATION: "linear-authorization",
           CUSTOM_TRACKER_SECRET: "custom-tracker-secret",
         },
         runtimeDirectory,
@@ -213,8 +210,6 @@ describe("createWorkerNonCodexRuntimeAdapter", () => {
     });
     for (const name of [
       "GITHUB_GRAPHQL_TOKEN",
-      "LINEAR_API_KEY",
-      "LINEAR_AUTHORIZATION",
       "CUSTOM_TRACKER_SECRET",
       "GITHUB_TOKEN_BROKER_URL",
       "GITHUB_TOKEN_BROKER_SECRET",

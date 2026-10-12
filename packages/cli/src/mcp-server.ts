@@ -1,7 +1,6 @@
 import { runGitHubGraphQLMcpServer } from "@gh-symphony/tool-github-graphql";
-import { runLinearGraphQLMcpServer } from "@gh-symphony/tool-linear-graphql";
 
-export type BuiltInMcpServer = "github" | "linear";
+export type BuiltInMcpServer = "github";
 
 export function parseBuiltInMcpServer(args: string[]): BuiltInMcpServer {
   const serverFlagIndex = args.indexOf("--server");
@@ -11,24 +10,18 @@ export function parseBuiltInMcpServer(args: string[]): BuiltInMcpServer {
   const server =
     serverFlagIndex === -1 ? inlineServer : args[serverFlagIndex + 1];
 
-  if (server === "github" || server === "linear") {
+  if (server === "github") {
     return server;
   }
 
   throw new Error(
-    `Expected --server <github|linear> when starting the built-in MCP server, received ${server ?? "nothing"}.`
+    `Expected --server github when starting the built-in MCP server, received ${server ?? "nothing"}.`
   );
 }
 
 export async function runBuiltInMcpServer(args: string[]): Promise<void> {
-  const server = parseBuiltInMcpServer(args);
-
-  if (server === "github") {
-    await runGitHubGraphQLMcpServer();
-    return;
-  }
-
-  await runLinearGraphQLMcpServer();
+  parseBuiltInMcpServer(args);
+  await runGitHubGraphQLMcpServer();
 }
 
 if (import.meta.url === new URL(process.argv[1] ?? "", "file:").href) {

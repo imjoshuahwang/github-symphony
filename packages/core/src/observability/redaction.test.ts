@@ -7,16 +7,16 @@ import {
 } from "./redaction.js";
 
 describe("redactObservabilitySecrets", () => {
-  it("redacts Linear API keys and Authorization headers recursively", () => {
+  it("redacts API keys and Authorization headers recursively", () => {
     const redacted = redactObservabilitySecrets({
       event: "tool-call",
-      LINEAR_API_KEY: "lin_secret",
+      SERVICE_API_KEY: "svc_secret",
       headers: {
-        authorization: "Bearer lin_secret",
-        authorizationHeader: "Bearer lin_secret",
+        authorization: "Bearer svc_secret",
+        authorizationHeader: "Bearer svc_secret",
       },
-      linearApiKey: "lin_secret",
-      githubGraphqlToken: "lin_secret",
+      serviceApiKey: "svc_secret",
+      githubGraphqlToken: "svc_secret",
       tokenUsage: {
         inputTokens: 1,
         outputTokens: 2,
@@ -24,9 +24,9 @@ describe("redactObservabilitySecrets", () => {
       },
       nested: [
         {
-          token: "lin_secret",
-          accessToken: "lin_secret",
-          bearerToken: "lin_secret",
+          token: "svc_secret",
+          accessToken: "svc_secret",
+          bearerToken: "svc_secret",
           value: "safe",
         },
       ],
@@ -34,12 +34,12 @@ describe("redactObservabilitySecrets", () => {
 
     expect(redacted).toEqual({
       event: "tool-call",
-      LINEAR_API_KEY: "[REDACTED]",
+      SERVICE_API_KEY: "[REDACTED]",
       headers: {
         authorization: "[REDACTED]",
         authorizationHeader: "[REDACTED]",
       },
-      linearApiKey: "[REDACTED]",
+      serviceApiKey: "[REDACTED]",
       githubGraphqlToken: "[REDACTED]",
       tokenUsage: {
         inputTokens: 1,
@@ -55,7 +55,7 @@ describe("redactObservabilitySecrets", () => {
         },
       ],
     });
-    expect(JSON.stringify(redacted)).not.toContain("lin_secret");
+    expect(JSON.stringify(redacted)).not.toContain("svc_secret");
   });
 
   it("redacts secrets embedded in persisted free-form fields", () => {
@@ -119,7 +119,7 @@ describe("redactObservabilitySecrets", () => {
         "Authorization: Bearer abc123",
         "GITHUB_TOKEN=ghp_xxx",
         "GITHUB_GRAPHQL_TOKEN=ghp_xxx",
-        "LINEAR_API_KEY=lin_xxx",
+        "SERVICE_API_KEY=svc_xxx",
         "OPENAI_API_KEY=sk-xxx",
         "X-API-Key: xxx",
         "token: xxx",
@@ -133,7 +133,7 @@ describe("redactObservabilitySecrets", () => {
     for (const secret of [
       "abc123",
       "ghp_xxx",
-      "lin_xxx",
+      "svc_xxx",
       "sk-xxx",
       "xxx",
       "json_token_value",

@@ -206,39 +206,7 @@ async function preflightRepoStartAuth(
     });
   }
 
-  if (projectConfig.tracker.adapter === "linear") {
-    const configuredToken = await resolveConfiguredLinearToken(projectConfig);
-    if (configuredToken?.trim() || process.env.LINEAR_API_KEY?.trim()) {
-      return { ok: true };
-    }
-    process.stderr.write(
-      `Linear authentication is required. Set LINEAR_API_KEY in the environment before running '${input.retryCommand}'.\n`
-    );
-    process.exitCode = 1;
-    return { ok: false };
-  }
-
   return { ok: true };
-}
-
-async function resolveConfiguredLinearToken(
-  projectConfig: OrchestratorProjectConfig
-): Promise<string | null> {
-  const workflowPath = projectConfig.workflowSource?.path;
-  if (!workflowPath) return null;
-  try {
-    const workflow = parseWorkflowMarkdown(
-      await readFile(workflowPath, "utf8"),
-      process.env,
-      {
-        supportedTrackerKinds: getSupportedTrackerKinds(),
-        resolveTrackerAdapter: resolveWorkflowConfigTrackerAdapter,
-      }
-    );
-    return workflow.tracker.apiKey;
-  } catch {
-    return null;
-  }
 }
 
 async function preflightWorkflowStart(

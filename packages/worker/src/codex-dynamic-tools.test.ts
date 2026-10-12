@@ -125,18 +125,18 @@ describe("Codex host dynamic tools", () => {
     );
   });
 
-  it("routes GitHub tools alongside Linear tools and preserves loaded env", async () => {
+  it("routes GitHub tools alongside other tracker tools and preserves loaded env", async () => {
     const github = vi.fn().mockResolvedValue({ provider: "github" });
-    const linear = vi.fn().mockResolvedValue({ provider: "linear" });
+    const otherTracker = vi.fn().mockResolvedValue({ provider: "file" });
     const response = await executeCodexDynamicToolCall(
       "github_graphql",
       { query: "query { viewer { login } }" },
       createTrackerToolContext({
         ...env,
-        SYMPHONY_TRACKER_KIND: "linear",
+        SYMPHONY_TRACKER_KIND: "file",
         GITHUB_GRAPHQL_TOKEN: "dotenv-token",
       }),
-      { ...env, SYMPHONY_TRACKER_KIND: "linear" },
+      { ...env, SYMPHONY_TRACKER_KIND: "file" },
       {
         adapters: [
           {
@@ -157,8 +157,8 @@ describe("Codex host dynamic tools", () => {
           {
             agentToolSpecs: () => [
               {
-                name: "linear_graphql",
-                description: "Linear",
+                name: "file_tracker_tool",
+                description: "File tracker",
                 inputSchema: {
                   type: "object",
                   properties: {},
@@ -167,7 +167,7 @@ describe("Codex host dynamic tools", () => {
                 },
               },
             ],
-            executeAgentTool: linear,
+            executeAgentTool: otherTracker,
           },
         ],
       }
@@ -183,6 +183,6 @@ describe("Codex host dynamic tools", () => {
         }),
       })
     );
-    expect(linear).not.toHaveBeenCalled();
+    expect(otherTracker).not.toHaveBeenCalled();
   });
 });

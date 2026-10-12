@@ -49,8 +49,6 @@ type Invocation = {
     githubToken: boolean;
     ghToken: boolean;
     githubTokenBrokerSecret: boolean;
-    linearApiKey: boolean;
-    linearAuthorization: boolean;
   };
   environment: NodeJS.ProcessEnv;
 };
@@ -154,7 +152,6 @@ const env = process.env;
 fs.writeFileSync(process.argv[2], JSON.stringify({
   customAuth: env.CUSTOM_AGENT_TOKEN ?? null,
   githubToken: env.GITHUB_TOKEN ?? null,
-  linearApiKey: env.LINEAR_API_KEY ?? null,
   githubBrokerSecret: env.GITHUB_TOKEN_BROKER_SECRET ?? null,
   agentBrokerSecret: env.AGENT_CREDENTIAL_BROKER_SECRET ?? null,
   trackerSecret: env.TRACKER_SECRET ?? null,
@@ -185,7 +182,6 @@ fs.writeFileSync(process.argv[2], JSON.stringify({
           GH_CONFIG_DIR: join(hostHome, ".config", "gh"),
           CUSTOM_AGENT_TOKEN: "custom-agent-token",
           GITHUB_TOKEN: "github-token",
-          LINEAR_API_KEY: "linear-token",
           GITHUB_TOKEN_BROKER_SECRET: "github-broker-secret",
           AGENT_CREDENTIAL_BROKER_SECRET: "agent-broker-secret",
           GIT_CONFIG_KEY_0: "credential.helper",
@@ -219,7 +215,6 @@ fs.writeFileSync(process.argv[2], JSON.stringify({
       });
       const rawSecretValues = {
         githubToken: "github-token",
-        linearApiKey: "linear-token",
         githubBrokerSecret: "github-broker-secret",
         agentBrokerSecret: "agent-broker-secret",
         trackerSecret: "tracker-secret",
@@ -380,15 +375,11 @@ global.fetch = async (url, options) => {
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "credential.helper",
       GIT_CONFIG_VALUE_0: "",
-      LINEAR_API_KEY: "stub-linear-api-key",
-      LINEAR_AUTHORIZATION: "Bearer stub-linear-authorization",
       SYMPHONY_TRACKER_SECRET_ENVIRONMENT_NAMES: JSON.stringify([
         "GITHUB_GRAPHQL_TOKEN",
         "GITHUB_TOKEN",
         "GH_TOKEN",
         "GITHUB_TOKEN_BROKER_SECRET",
-        "LINEAR_API_KEY",
-        "LINEAR_AUTHORIZATION",
       ]),
       GITHUB_PROJECT_ID: "stub-project",
       WORKING_DIRECTORY: workspace,
@@ -461,8 +452,6 @@ global.fetch = async (url, options) => {
       githubToken: false,
       ghToken: false,
       githubTokenBrokerSecret: false,
-      linearApiKey: false,
-      linearAuthorization: false,
     });
     expect(invocations.at(-1)?.childBoundary).toEqual({
       home: join(runtimeRoot, "child-home"),

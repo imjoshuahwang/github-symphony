@@ -47,7 +47,6 @@
     "@gh-symphony/runtime-codex": "workspace:*",
     "@gh-symphony/tracker-file": "workspace:*",
     "@gh-symphony/tracker-github": "workspace:*",
-    "@gh-symphony/tracker-linear": "workspace:*",
     "@gh-symphony/worker": "workspace:*",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/api-logs": "0.223.0",

@@ -86,9 +86,9 @@ describe("Claude host MCP HTTP server", () => {
     });
   });
 
-  it("uses Streamable HTTP semantics and keeps GitHub available for Linear", async () => {
+  it("uses Streamable HTTP semantics", async () => {
     server = await startClaudeMcpHttpServer({
-      env: { SYMPHONY_TRACKER_KIND: "linear" },
+      env: { SYMPHONY_TRACKER_KIND: "github-project" },
       context: {
         issue: { id: "issue-1", identifier: "owner/repo#1", nativeRef: {} },
       },
@@ -121,7 +121,6 @@ describe("Claude host MCP HTTP server", () => {
       result: {
         tools: expect.arrayContaining([
           expect.objectContaining({ name: "github_graphql" }),
-          expect.objectContaining({ name: "linear_graphql" }),
         ]),
       },
     });

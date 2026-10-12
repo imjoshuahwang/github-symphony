@@ -34,5 +34,5 @@ docker compose -f docker-compose.e2e.yml down --volumes --remove-orphans
 ## Cleanup
 
 The commands remove the compose project and its temporary workspace. No live
-GitHub or Linear provider credentials are needed; the provider HTTP boundary is
+GitHub provider credentials are needed; the provider HTTP boundary is
 stubbed by the tests.

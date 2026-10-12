@@ -180,7 +180,7 @@ an explicitly declared path is valid.
 | `hooks.timeout_ms`        | A positive integer when provided                                                                                                   | `workflow_validation_error` at `hooks.timeout_ms`                                                   |
 | `agent.max_turns`         | A positive integer when provided                                                                                                   | `workflow_validation_error` at `agent.max_turns`                                                    |
 | `codex.command`           | A non-empty string when provided                                                                                                   | `workflow_validation_error` at `codex.command`                                                      |
-| `tracker.kind`            | One of `github-project`, `linear`, or `file`                                                                                       | `workflow_validation_error` at `tracker.kind`                                                       |
+| `tracker.kind`            | One of `github-project` or `file`                                                                                                  | `workflow_validation_error` at `tracker.kind`                                                       |
 | `tracker.required_labels` | An array of strings; comma-separated strings are rejected                                                                          | `workflow_validation_error` at `tracker.required_labels`                                            |
 | `server.port`             | An integer from `0` to `65535`; `0` requests an ephemeral local port                                                               | `workflow_validation_error` at `server.port`                                                        |
 
@@ -223,7 +223,7 @@ Reconciliation still terminates an active worker on its next tick without
 workspace cleanup so its work remains available for recovery.
 
 `tracker.provider.pickup_labels.include` is separate from
-`tracker.required_labels`. For GitHub and Linear it is an ANY-of candidate
+`tracker.required_labels`. For GitHub it is an ANY-of candidate
 pre-filter: an issue needs at least one include label to enter the dispatch
 candidate set. `exclude` always wins. Pickup-label changes affect future
 candidate listing only; they do not make an already-running issue non-routable
@@ -248,14 +248,12 @@ adapter behavior is unchanged.
 For dispatch priority, see [ADR 2026-08-28](adr/2026-08-28_priority-mapping-documented-different-mapping.md).
 The repository intentionally keeps numeric priorities, including non-integers,
 in ascending order and places `null` last, a documented different mapping under
-Symphony specification §8.2 and §11.3. Linear priority `0` ("No priority") is
-normalized to `null` by the adapter, so it sorts after numeric priorities; this
-adapter normalization shipped in [#660](https://github.com/hojinzs/github-symphony/issues/660).
+Symphony specification §8.2 and §11.3.
 
 ## Workflow Lifecycle Policy
 
-`tracker.provider.blocker_check_states` selects the workflow states where the GitHub and
-Linear adapters derive `dispatchable: false` from unresolved `blocked_by`
+`tracker.provider.blocker_check_states` selects the workflow states where the GitHub
+adapter derives `dispatchable: false` from unresolved `blocked_by`
 dependencies. The orchestrator consumes that normalized result and does not
 interpret provider blocker semantics. When the field is omitted, the default is
 `["Todo"]`, matching the Symphony candidate-selection rule. Set an explicit
@@ -264,39 +262,17 @@ should be disabled. This opt-out is an intentional repository-level divergence
 from the vendored Symphony specification's unconditional blocker rule.
 
 GitHub source-closed blockers and blockers whose Project workflow state is in
-`tracker.terminal_states` are resolved. Linear uses its workflow-state relation
-data directly. In both adapters, `blocked_by` remains best-effort metadata and
+`tracker.terminal_states` are resolved. In the GitHub adapter, `blocked_by` remains best-effort metadata and
 `dispatchReason` identifies an unresolved dependency. Omitting
 `tracker.provider.planning_states` keeps planning disabled; blocker defaults do not enable the
-planning/human-review execution phase. Linear `blocked_by` metadata is derived
-from inverse relations of type `blocks`; source-side relations describe issues
-blocked by the current issue and are not blockers of it.
+planning/human-review execution phase.
 
-## Linear and file tracker providers
+## File tracker provider
 
 Tracker-specific configuration belongs in `tracker.provider`. Flat tracker
 keys are rejected with the typed `workflow_deprecated_key` error. Run
 `gh-symphony doctor` for a copyable normalized provider block before updating
 the workflow.
-
-```yaml
-tracker:
-  kind: linear
-  provider:
-    endpoint: https://api.linear.app/graphql # optional
-    api_key: $LINEAR_API_KEY # optional environment reference
-    project_slug: platform # required Linear project slug
-    pickup_labels:
-      include: [agent]
-      exclude: [blocked]
-```
-
-Linear scopes polling with `project_slug`; it does not accept `project_id`,
-`projectId`, `teamId`, or `team_id` as aliases. When provided, `api_key` must
-be an environment reference so secrets remain outside committed workflow policy;
-when omitted, the runtime uses `LINEAR_API_KEY`. Its documented
-lifecycle default is `Todo`/`In Progress` active, `Done` terminal, `Todo`
-blocker-check, and no planning states.
 
 ```yaml
 tracker:
@@ -494,13 +470,9 @@ allowlist: at dispatch, the tracker adapter resolves a tenant-scoped credential
 from the project `.env` first and the daemon environment second, then injects it
 only into the worker host environment. The credential remains excluded from the
 coding-agent child. GitHub tracker polling and host-owned tools require
-`GITHUB_GRAPHQL_TOKEN`. Linear likewise treats
-each scope atomically: when either `LINEAR_AUTHORIZATION` or `LINEAR_API_KEY`
-is present in the project `.env`, only values from that project scope are
-forwarded and daemon values are not mixed into the credential set.
+`GITHUB_GRAPHQL_TOKEN`.
 The worker validates this effective credential set before runtime launch.
-GitHub requires `GITHUB_GRAPHQL_TOKEN`;
-Linear requires `LINEAR_AUTHORIZATION` or `LINEAR_API_KEY`. `doctor` applies
+GitHub requires `GITHUB_GRAPHQL_TOKEN`. `doctor` applies
 the GitHub adapter's same project-first selection and reports the managed
 project `.env` path when remediation is required.
 
@@ -523,14 +495,11 @@ operators can compare whether the project environment changed between runs.
 These variables are user-facing and are safe to set in local shells, CI, or
 container environments.
 
-| Variable                 | Default                                                                                                          | Read by                                                                | Audience                                            | Notes                                                                                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_GRAPHQL_TOKEN`   | unset                                                                                                            | CLI, orchestrator, GitHub tracker, worker host tools and Git transport | User-facing                                         | Token-only GitHub auth source. Requires `repo`, `read:org`, and `project` scopes. Not inherited by agent children by default.                                       |
-| `GITHUB_GRAPHQL_API_URL` | unset; GitHub tooling falls back to the public GitHub GraphQL endpoint unless tracker config injects an endpoint | CLI doctor, Codex runtime, Claude runtime                              | User-facing, GHES                                   | Process-level GraphQL endpoint override. For GHES, prefer `tracker.provider.endpoint` in `WORKFLOW.md`; if both are set, keep them identical.                       |
-| `GITHUB_PROJECT_ID`      | unset; injected from project config for workers                                                                  | Codex runtime, Claude runtime                                          | Internal unless running a runtime launcher manually | Passed to GitHub GraphQL tooling so agent tools can target the active Project.                                                                                      |
-| `LINEAR_API_KEY`         | unset                                                                                                            | CLI, Linear tracker, worker host tools                                 | User-facing for Linear tracker projects             | Required for Linear project startup. Retained at the host boundary and not inherited by agent children by default.                                                  |
-| `LINEAR_AUTHORIZATION`   | unset                                                                                                            | Linear tracker, worker host tools                                      | Advanced                                            | Optional raw Linear authorization value for host-side Linear operations; it takes priority over `LINEAR_API_KEY` and is not inherited by agent children by default. |
-| `LINEAR_GRAPHQL_URL`     | `https://api.linear.app/graphql` when the Linear tool is enabled                                                 | Codex runtime, Claude runtime                                          | User-facing for Linear Enterprise/proxy setups      | Overrides the Linear GraphQL endpoint.                                                                                                                              |
+| Variable                 | Default                                                                                                          | Read by                                                                | Audience                                            | Notes                                                                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_GRAPHQL_TOKEN`   | unset                                                                                                            | CLI, orchestrator, GitHub tracker, worker host tools and Git transport | User-facing                                         | Token-only GitHub auth source. Requires `repo`, `read:org`, and `project` scopes. Not inherited by agent children by default.                 |
+| `GITHUB_GRAPHQL_API_URL` | unset; GitHub tooling falls back to the public GitHub GraphQL endpoint unless tracker config injects an endpoint | CLI doctor, Codex runtime, Claude runtime                              | User-facing, GHES                                   | Process-level GraphQL endpoint override. For GHES, prefer `tracker.provider.endpoint` in `WORKFLOW.md`; if both are set, keep them identical. |
+| `GITHUB_PROJECT_ID`      | unset; injected from project config for workers                                                                  | Codex runtime, Claude runtime                                          | Internal unless running a runtime launcher manually | Passed to GitHub GraphQL tooling so agent tools can target the active Project.                                                                |
 
 ### Git Access
 
@@ -603,8 +572,8 @@ runtime:
 Only `ACME_AGENT_TOKEN` is copied into the default child environment when it is
 present in the worker environment. Use a dedicated least-privilege provider
 token; do not declare a tracker or broker credential as custom runtime auth.
-`runtime.auth.env` fails workflow validation when it names a reserved GitHub,
-Linear, or credential-broker value, or a tracker-declared secret name. This
+`runtime.auth.env` fails workflow validation when it names a reserved GitHub
+or credential-broker value, or a tracker-declared secret name. This
 prevents a security-sensitive configuration from silently starting an
 unauthenticated custom command. The selected tracker adapter supplies those
 names during workflow loading, so the result is the same in the orchestrator
@@ -635,7 +604,7 @@ layout.
 | Variable                               | Default                                                                                       | Read by                       | Audience           | Notes                                                                                                                                                                                                                                                                                   |
 | -------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GH_SYMPHONY_CONFIG_DIR`               | CLI default config directory; official container sets `/var/lib/gh-symphony`                  | CLI                           | User-facing/ops    | Overrides the global runtime config directory. `--config <dir>` takes precedence and selects project runtime state, including daemon PID records.                                                                                                                                       |
-| `GH_SYMPHONY_FILE_TRACKER_ISSUES_PATH` | unset                                                                                         | CLI file tracker              | Internal/E2E       | Compatibility fallback for a file workflow without `tracker.provider.path`; provider paths may also use this variable or another environment reference. Not needed for GitHub or Linear trackers.                                                                                       |
+| `GH_SYMPHONY_FILE_TRACKER_ISSUES_PATH` | unset                                                                                         | CLI file tracker              | Internal/E2E       | Compatibility fallback for a file workflow without `tracker.provider.path`; provider paths may also use this variable or another environment reference. Not needed for GitHub trackers.                                                                                                 |
 | `GH_SYMPHONY_HTTP_TOKEN`               | random per `project start` process                                                            | CLI HTTP servers              | User-facing/ops    | Shared bearer secret for all `/api/v1/*` routes. Set this for scripts, daemon clients, or a stable dashboard URL.                                                                                                                                                                       |
 | `SYMPHONY_EVENTS_DIR`                  | runtime-managed event storage                                                                 | Orchestrator package CLI      | User-facing/ops    | Optional override for where orchestrator events are written.                                                                                                                                                                                                                            |
 | `SYMPHONY_LOG_LEVEL`                   | `normal`                                                                                      | CLI, orchestrator package CLI | User-facing/ops    | Supports `normal` and `verbose`. CLI flags override the env value.                                                                                                                                                                                                                      |
@@ -683,8 +652,8 @@ not set them manually.
 | `SYMPHONY_ORCHESTRATOR_URL`       | internal worker API URL                      | Worker                                            | Internal/injected | Used for authenticated worker-state, turn-lease, run-scoped tracker state, and assigned-branch publication requests.                                                                                                                                                          |
 | `SYMPHONY_ORCHESTRATOR_TOKEN`     | process-random secret                        | Worker                                            | Internal/injected | Authenticates worker-only orchestrator API calls, including `POST /api/v1/assigned-branch/publish`; never exposed through status APIs.                                                                                                                                        |
 | `SYMPHONY_CONTINUATION_GUIDANCE`  | workflow continuation guidance               | Worker                                            | Internal/injected | Prompt guidance used on continuation turns.                                                                                                                                                                                                                                   |
-| `SYMPHONY_TRACKER_ADAPTER`        | active tracker adapter                       | Worker                                            | Internal/injected | Tracker adapter name, for example `github-project`, `linear`, or `file`.                                                                                                                                                                                                      |
-| `SYMPHONY_TRACKER_KIND`           | active tracker kind                          | Codex runtime, Claude runtime, worker routing     | Internal/injected | Enables Linear tooling when set to `linear`.                                                                                                                                                                                                                                  |
+| `SYMPHONY_TRACKER_ADAPTER`        | active tracker adapter                       | Worker                                            | Internal/injected | Tracker adapter name, for example `github-project` or `file`.                                                                                                                                                                                                                 |
+| `SYMPHONY_TRACKER_KIND`           | active tracker kind                          | Codex runtime, Claude runtime, worker routing     | Internal/injected | Active tracker kind.                                                                                                                                                                                                                                                          |
 | `SYMPHONY_TRACKER_BINDING_ID`     | tracker binding ID                           | Worker                                            | Internal/injected | Tracker binding metadata.                                                                                                                                                                                                                                                     |
 | `SYMPHONY_TRACKER_ITEM_ID`        | tracker item ID                              | Worker                                            | Internal/injected | Tracker item metadata.                                                                                                                                                                                                                                                        |
 | `SYMPHONY_ISSUE_ID`               | tracker issue ID                             | Worker                                            | Internal/injected | Tracker-native issue identifier.                                                                                                                                                                                                                                              |

@@ -5,12 +5,12 @@ import {
 } from "./tracker-adapters.js";
 
 describe("resolveTrackerAdapter", () => {
-  it("registers the Linear adapter", () => {
+  it("registers the file adapter", () => {
     const adapter = resolveTrackerAdapter({
-      adapter: "linear",
-      bindingId: "project-slug",
+      adapter: "file",
+      bindingId: "file-tracker",
       settings: {
-        projectSlug: "project-slug",
+        issuesPath: "/tmp/issues.json",
       },
     });
 
@@ -20,6 +20,6 @@ describe("resolveTrackerAdapter", () => {
 
 it("exports adapter-owned tracker kinds for workflow validation", () => {
   expect(getSupportedTrackerKinds()).toEqual(
-    expect.arrayContaining(["github-project", "file", "linear"])
+    expect.arrayContaining(["github-project", "file"])
   );
 });

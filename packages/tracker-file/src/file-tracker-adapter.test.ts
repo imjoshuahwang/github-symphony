@@ -138,7 +138,7 @@ describe("fileTrackerAdapter", () => {
             ...sampleIssue,
             id: "issue-2",
             dispatchable: false,
-            assigneeId: "linear-user-2",
+            assigneeId: "user-2",
           },
         ])
       );
@@ -147,7 +147,7 @@ describe("fileTrackerAdapter", () => {
         fileTrackerAdapter.listIssues(makeProject(issuesPath))
       ).resolves.toMatchObject([
         { id: "issue-1", dispatchable: true, assigneeId: null },
-        { id: "issue-2", dispatchable: false, assigneeId: "linear-user-2" },
+        { id: "issue-2", dispatchable: false, assigneeId: "user-2" },
       ]);
     });
 

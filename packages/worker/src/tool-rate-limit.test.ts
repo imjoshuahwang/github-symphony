@@ -55,14 +55,7 @@ describe("extractToolRateLimitPayload", () => {
     });
   });
 
-  it("does not apply the GitHub guard to Linear or non-provider snapshots", async () => {
-    await expect(
-      guardDynamicToolRateLimit("linear_graphql", {
-        source: "linear",
-        resource: "graphql",
-        remaining: 0,
-      })
-    ).resolves.toBe(false);
+  it("does not apply the GitHub guard to non-provider snapshots", async () => {
     await expect(
       guardDynamicToolRateLimit("github_graphql", {
         source: "codex",

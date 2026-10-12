@@ -14,12 +14,12 @@ describe("event-formatter", () => {
         event: "tracker.list",
         projectId: "project-1",
         tracker: {
-          adapter: "linear",
+          adapter: "file",
           projectSlug: "symphony-0c79b11b75ea",
         },
         issue: {
           identifier: "ENG-1",
-          id: "linear-issue-1",
+          id: "file-issue-1",
         },
       })
     ).toBe("Tracker list saw ENG-1");
@@ -30,12 +30,12 @@ describe("event-formatter", () => {
         event: "tracker.fetchByIds",
         projectId: "project-1",
         tracker: {
-          adapter: "linear",
+          adapter: "file",
           projectSlug: "symphony-0c79b11b75ea",
         },
         issue: {
           identifier: "ENG-1",
-          id: "linear-issue-1",
+          id: "file-issue-1",
         },
       })
     ).toBe("Tracker fetch refreshed ENG-1");

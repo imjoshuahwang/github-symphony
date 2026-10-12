@@ -205,8 +205,6 @@ const record = {
     githubToken: Boolean(process.env.GITHUB_TOKEN),
     ghToken: Boolean(process.env.GH_TOKEN),
     githubTokenBrokerSecret: Boolean(process.env.GITHUB_TOKEN_BROKER_SECRET),
-    linearApiKey: Boolean(process.env.LINEAR_API_KEY),
-    linearAuthorization: Boolean(process.env.LINEAR_AUTHORIZATION),
   },
   environment: { ...process.env },
 };

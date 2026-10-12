@@ -210,63 +210,6 @@ describe("composeClaudeMcpConfig", () => {
     ]);
   });
 
-  it("does not expose Linear provider subprocesses", async () => {
-    const workspaceRoot = await createTempWorkspace();
-
-    const result = await composeClaudeMcpConfig(workspaceRoot, false, {
-      SYMPHONY_TRACKER_KIND: "linear",
-      LINEAR_API_KEY: "lin_api_key",
-      LINEAR_GRAPHQL_URL: "https://api.linear.app/graphql",
-    });
-
-    expect(await readJson(result.finalPath)).toEqual({ mcpServers: {} });
-  });
-
-  it("does not add linear_graphql for non-Linear tracker sessions", async () => {
-    const workspaceRoot = await createTempWorkspace();
-
-    const result = await composeClaudeMcpConfig(workspaceRoot, false, {
-      LINEAR_API_KEY: "lin_api_key",
-    });
-    const config = await readJson(result.finalPath);
-
-    expect(
-      (config.mcpServers as Record<string, unknown>).linear_graphql
-    ).toBeUndefined();
-  });
-
-  it("removes stale linear_graphql entries for non-Linear tracker sessions", async () => {
-    const workspaceRoot = await createTempWorkspace();
-    const workspaceMcpPath = join(workspaceRoot, ".mcp.json");
-    await writeFile(
-      workspaceMcpPath,
-      JSON.stringify({
-        mcpServers: {
-          user_server: {
-            command: "node",
-            args: ["user-server.js"],
-          },
-          linear_graphql: {
-            command: "old",
-            env: {
-              LINEAR_API_KEY: "$OLD_LINEAR_TOKEN",
-            },
-          },
-        },
-      }) + "\n",
-      "utf8"
-    );
-
-    const result = await composeClaudeMcpConfig(workspaceRoot, false, {
-      SYMPHONY_TRUST_REPO_CONFIG: "true",
-      OLD_LINEAR_TOKEN: "old-secret",
-    });
-    const config = await readJson(result.finalPath);
-
-    expect(config.mcpServers).toEqual({});
-    expect(JSON.stringify(config)).not.toContain("old-secret");
-  });
-
   it("forces strict mode after excluding trusted repository MCP servers", async () => {
     const workspaceRoot = await createTempWorkspace();
     const runtimeRoot = join(workspaceRoot, "runtime-root");

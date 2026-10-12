@@ -40,7 +40,6 @@
   },
   "dependencies": {
     "@gh-symphony/core": "workspace:*",
-    "@gh-symphony/tool-github-graphql": "workspace:*",
-    "@gh-symphony/tool-linear-graphql": "workspace:*"
+    "@gh-symphony/tool-github-graphql": "workspace:*"
   }
 }

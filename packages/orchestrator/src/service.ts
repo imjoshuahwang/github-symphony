@@ -260,7 +260,7 @@ export function shouldRecordConfirmedTrackerProgress(
 /**
  * Replaces the initial state-read with facts from one freshly normalized
  * snapshot so a worker never combines an old lifecycle state with new label
- * routing. A missing snapshot is a clean routing stop (for example, Linear
+ * routing. A missing snapshot is a clean routing stop (for example, label
  * pickup filtering), rather than transport failure.
  */
 export function applyStateReadRoutability(
@@ -2388,11 +2388,9 @@ export class OrchestratorService {
       const rateLimitSource =
         observedTrackerRateLimits.source === "github"
           ? "GitHub"
-          : observedTrackerRateLimits.source === "linear"
-            ? "Linear"
-            : typeof observedTrackerRateLimits.source === "string"
-              ? observedTrackerRateLimits.source
-              : "tracker";
+          : typeof observedTrackerRateLimits.source === "string"
+            ? observedTrackerRateLimits.source
+            : "tracker";
       this.writeStderr(
         `[orchestrator] low ${rateLimitSource} rate limit for ${tenant.projectId}: interval=${effectivePollIntervalMs}ms rateLimits=${JSON.stringify(
           observedTrackerRateLimits
@@ -7071,10 +7069,7 @@ function extractRateLimitRatio(
 function isTrackerGraphqlRateLimits(
   rateLimits: Record<string, unknown> | null | undefined
 ): rateLimits is Record<string, unknown> {
-  if (
-    !isRecord(rateLimits) ||
-    (rateLimits.source !== "github" && rateLimits.source !== "linear")
-  ) {
+  if (!isRecord(rateLimits) || rateLimits.source !== "github") {
     return false;
   }
 

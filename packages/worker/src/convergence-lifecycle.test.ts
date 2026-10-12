@@ -104,7 +104,7 @@ async function runTurnBoundary(
 
 describe("convergence threshold lifecycle", () => {
   it("keeps healthy confirmed per-turn refreshes active after dirty work", async () => {
-    const healthyLinearRefresh = () =>
+    const healthyRefresh = () =>
       new Response(
         JSON.stringify({
           ok: true,
@@ -116,10 +116,7 @@ describe("convergence threshold lifecycle", () => {
 
     let currentCount = 0;
     for (let turn = 1; turn <= 4; turn += 1) {
-      const result = await runTurnBoundary(
-        healthyLinearRefresh(),
-        currentCount
-      );
+      const result = await runTurnBoundary(healthyRefresh(), currentCount);
 
       expect(result).toEqual({
         action: "continue",
@@ -130,7 +127,7 @@ describe("convergence threshold lifecycle", () => {
     }
   });
 
-  it("maps a confirmed missing Linear issue to a non-actionable stop", async () => {
+  it("maps a confirmed missing tracker issue to a non-actionable stop", async () => {
     await expect(
       runTurnBoundary(
         new Response(

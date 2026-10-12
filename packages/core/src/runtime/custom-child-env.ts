@@ -82,8 +82,6 @@ export const CUSTOM_RUNTIME_RESERVED_AUTH_ENVIRONMENT_NAMES = [
   "GITHUB_GRAPHQL_TOKEN",
   "GITHUB_TOKEN",
   "GITHUB_TOKEN_BROKER_SECRET",
-  "LINEAR_API_KEY",
-  "LINEAR_AUTHORIZATION",
 ] as const;
 
 export function isAgentChildCredentialEnvironmentName(name: string): boolean {

@@ -2,7 +2,6 @@ import {
   DEFAULT_AGENT_COMMAND,
   DEFAULT_BASE_DELAY_MS,
   DEFAULT_CLAUDE_COMMAND,
-  DEFAULT_LINEAR_GRAPHQL_URL,
   DEFAULT_HOOK_TIMEOUT_MS,
   DEFAULT_MAX_CONCURRENT_AGENTS,
   DEFAULT_MAX_FAILURE_RETRIES,
@@ -92,7 +91,6 @@ export class WorkflowValidationError extends Error {
 /** Compatibility list for consumers that do not own a tracker-adapter registry. */
 export const DEFAULT_SUPPORTED_TRACKER_KINDS = [
   "github-project",
-  "linear",
   "file",
 ] as const;
 
@@ -332,9 +330,7 @@ function parseWorkflowConfig(
       kind: trackerKind,
       provider,
       deprecatedKeys,
-      endpoint:
-        readNormalizedOptionalString(provider, "endpoint", env) ??
-        (trackerKind === "linear" ? DEFAULT_LINEAR_GRAPHQL_URL : null),
+      endpoint: readNormalizedOptionalString(provider, "endpoint", env) ?? null,
       apiKey: readNormalizedOptionalSecret(provider, "api_key", env),
       projectSlug: readNormalizedOptionalString(provider, "project_slug", env),
       pickupLabels: readPickupLabelsConfig(provider),

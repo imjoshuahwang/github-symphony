@@ -15196,7 +15196,7 @@ Prefer focused changes.
       const loadAllRunsSpy = vi.spyOn(store, "loadAllRuns");
       const projectConfig = createProjectConfig(tempRoot, repository);
       projectConfig.tracker = {
-        adapter: "linear",
+        adapter: "file",
         bindingId: "symphony-0c79b11b75ea",
         settings: {
           projectSlug: "symphony-0c79b11b75ea",
@@ -15249,7 +15249,7 @@ Prefer focused changes.
       });
       const workspaceKey = deriveIssueWorkspaceKey(
         {
-          adapter: "linear",
+          adapter: "file",
           issueSubjectId: "issue-1",
         },
         "acme/platform#1"
@@ -15265,7 +15265,7 @@ Prefer focused changes.
       await store.saveIssueWorkspace({
         workspaceKey,
         projectId: "tenant-1",
-        adapter: "linear",
+        adapter: "file",
         issueSubjectId: "issue-1",
         issueIdentifier: "acme/platform#1",
         workspacePath,
@@ -15292,7 +15292,7 @@ Prefer focused changes.
         updatedAt: "2026-03-08T00:05:00.000Z",
         repository,
         tracker: {
-          adapter: "linear" as const,
+          adapter: "file" as const,
           bindingId: "symphony-0c79b11b75ea",
           itemId: "issue-1",
         },
@@ -15325,7 +15325,7 @@ Prefer focused changes.
         listIssuesByStates: vi.fn().mockResolvedValue([]),
         fetchIssueStatesByIds,
         buildWorkerEnvironment: vi.fn().mockReturnValue({
-          LINEAR_ISSUE_ID: "issue-1",
+          TRACKER_ISSUE_ID: "issue-1",
         }),
         reviveIssue: vi.fn(),
       });
@@ -15608,9 +15608,9 @@ Handle archived item reconciliation.`,
     expect(snapshot.activeRuns).toHaveLength(0);
   });
 
-  it("records Linear tracker and issue metadata on structured tracker events", async () => {
+  it("records tracker and issue metadata on structured tracker events", async () => {
     const tempRoot = await mkdtemp(
-      join(tmpdir(), "orchestrator-linear-events-")
+      join(tmpdir(), "orchestrator-tracker-events-")
     );
     const repository = await createRepositoryFixture(
       tempRoot,
@@ -15620,10 +15620,10 @@ Handle archived item reconciliation.`,
     await commitWorkflowFixture(repository.path, {
       rawWorkflow: `---
 tracker:
-  kind: linear
+  kind: file
   provider:
-    project_slug: symphony-0c79b11b75ea
-    state_field: Status
+    path: issues.json
+    project_id: file-tracker
   active_states:
     - Todo
     - In Progress
@@ -15635,7 +15635,7 @@ hooks:
 codex:
   command: node ${join(tempRoot, "worker.js")}
 ---
-Handle Linear issue.`,
+Handle tracker issue.`,
     });
     await writeFile(
       join(tempRoot, "worker.js"),
@@ -15647,7 +15647,7 @@ Handle Linear issue.`,
     const projectConfig = {
       ...createProjectConfig(tempRoot, repository),
       tracker: {
-        adapter: "linear" as const,
+        adapter: "file" as const,
         bindingId: "symphony-0c79b11b75ea",
         settings: {
           projectSlug: "symphony-0c79b11b75ea",
@@ -15657,15 +15657,15 @@ Handle Linear issue.`,
     };
     await store.saveProjectConfig(projectConfig);
     const issue = {
-      id: "linear-issue-1",
+      id: "tracker-issue-1",
       identifier: "ENG-1",
       number: 1,
-      title: "Linear issue",
+      title: "Tracker issue",
       description: null,
       priority: null,
       state: "Todo",
       branchName: null,
-      url: "https://linear.app/acme/issue/ENG-1",
+      url: "https://tracker.example.test/issues/ENG-1",
       labels: [],
       dispatchable: true,
       assigneeId: null,
@@ -15674,15 +15674,15 @@ Handle Linear issue.`,
       updatedAt: "2026-03-08T00:00:00.000Z",
       repository,
       tracker: {
-        adapter: "linear" as const,
+        adapter: "file" as const,
         bindingId: "symphony-0c79b11b75ea",
-        itemId: "linear-issue-1",
+        itemId: "tracker-issue-1",
       },
       metadata: {
         projectSlug: "symphony-0c79b11b75ea",
       },
       rateLimits: {
-        source: "linear",
+        source: "github",
         limit: 1500,
         remaining: 1499,
         resource: "graphql",
@@ -15704,7 +15704,7 @@ Handle Linear issue.`,
       listIssuesByStates: vi.fn().mockResolvedValue([]),
       fetchIssueStatesByIds: vi.fn().mockResolvedValue([]),
       buildWorkerEnvironment: vi.fn().mockReturnValue({
-        LINEAR_ISSUE_ID: "linear-issue-1",
+        TRACKER_ISSUE_ID: "tracker-issue-1",
       }),
       reviveIssue: vi.fn(),
       buildStructuredEventMetadata: vi.fn().mockReturnValue({
@@ -15724,7 +15724,7 @@ Handle Linear issue.`,
 
     const runs = await store.loadAllRuns();
     const run = runs.find(
-      (candidate) => candidate.issueId === "linear-issue-1"
+      (candidate) => candidate.issueId === "tracker-issue-1"
     );
     expect(run).toBeDefined();
     const rawEvents = (
@@ -15745,15 +15745,15 @@ Handle Linear issue.`,
         expect.objectContaining({
           event: "tracker.list",
           tracker: {
-            adapter: "linear",
+            adapter: "file",
             projectSlug: "symphony-0c79b11b75ea",
           },
           issue: {
             identifier: "ENG-1",
-            id: "linear-issue-1",
+            id: "tracker-issue-1",
           },
           rateLimits: expect.objectContaining({
-            source: "linear",
+            source: "github",
             remaining: 1499,
             cycleCost: 13,
             queryCosts: {
@@ -15771,24 +15771,24 @@ Handle Linear issue.`,
         expect.objectContaining({
           event: "run-dispatched",
           tracker: {
-            adapter: "linear",
+            adapter: "file",
             projectSlug: "symphony-0c79b11b75ea",
           },
           issue: {
             identifier: "ENG-1",
-            id: "linear-issue-1",
+            id: "tracker-issue-1",
           },
           issueIdentifier: "ENG-1",
-          issueId: "linear-issue-1",
+          issueId: "tracker-issue-1",
           workflowRevision: expect.stringMatching(/^sha256:[a-f0-9]{12}$/),
         }),
       ])
     );
   });
 
-  it("records tracker.list metadata when active Linear runs are refreshed", async () => {
+  it("records tracker.list metadata when active runs are refreshed", async () => {
     const tempRoot = await mkdtemp(
-      join(tmpdir(), "orchestrator-linear-fetch-events-")
+      join(tmpdir(), "orchestrator-tracker-fetch-events-")
     );
     const repository = await createRepositoryFixture(
       tempRoot,
@@ -15799,7 +15799,7 @@ Handle Linear issue.`,
     const projectConfig = {
       ...createProjectConfig(tempRoot, repository),
       tracker: {
-        adapter: "linear" as const,
+        adapter: "file" as const,
         bindingId: "symphony-0c79b11b75ea",
         settings: {
           projectSlug: "symphony-0c79b11b75ea",
@@ -15812,8 +15812,8 @@ Handle Linear issue.`,
       runId: "run-1",
       projectId: "tenant-1",
       projectSlug: "tenant-1",
-      issueId: "linear-issue-1",
-      issueSubjectId: "linear-issue-1",
+      issueId: "tracker-issue-1",
+      issueSubjectId: "tracker-issue-1",
       issueIdentifier: "ENG-1",
       issueState: "Todo",
       repository,
@@ -15837,8 +15837,8 @@ Handle Linear issue.`,
       runId: "run-2",
       projectId: "tenant-1",
       projectSlug: "tenant-1",
-      issueId: "linear-issue-2",
-      issueSubjectId: "linear-issue-2",
+      issueId: "tracker-issue-2",
+      issueSubjectId: "tracker-issue-2",
       issueIdentifier: "ENG-2",
       issueState: "Todo",
       repository,
@@ -15860,30 +15860,30 @@ Handle Linear issue.`,
     });
 
     const issue = {
-      id: "linear-issue-1",
+      id: "tracker-issue-1",
       identifier: "ENG-1",
       number: 1,
-      title: "Linear issue",
+      title: "Tracker issue",
       description: null,
       priority: null,
       state: "In Progress",
       branchName: null,
-      url: "https://linear.app/acme/issue/ENG-1",
+      url: "https://tracker.example.test/issues/ENG-1",
       labels: [],
       blockedBy: [],
       createdAt: "2026-03-08T00:00:00.000Z",
       updatedAt: "2026-03-08T00:05:00.000Z",
       repository,
       tracker: {
-        adapter: "linear" as const,
+        adapter: "file" as const,
         bindingId: "symphony-0c79b11b75ea",
-        itemId: "linear-issue-1",
+        itemId: "tracker-issue-1",
       },
       metadata: {
         projectSlug: "symphony-0c79b11b75ea",
       },
       rateLimits: {
-        source: "linear",
+        source: "github",
         limit: 1500,
         remaining: 1498,
         resource: "graphql",
@@ -15891,18 +15891,18 @@ Handle Linear issue.`,
     };
     const secondIssue = {
       ...issue,
-      id: "linear-issue-2",
+      id: "tracker-issue-2",
       identifier: "ENG-2",
       number: 2,
-      title: "Second Linear issue",
+      title: "Second tracker issue",
       tracker: {
         ...issue.tracker,
-        itemId: "linear-issue-2",
+        itemId: "tracker-issue-2",
       },
     };
     const refreshedIssues = [issue, secondIssue] as TrackedIssueList;
     refreshedIssues.rateLimits = {
-      source: "linear",
+      source: "github",
       limit: 1500,
       remaining: 1497,
       resource: "graphql",
@@ -15919,7 +15919,7 @@ Handle Linear issue.`,
       listIssuesByStates: vi.fn().mockResolvedValue([]),
       fetchIssueStatesByIds: vi.fn(),
       buildWorkerEnvironment: vi.fn().mockReturnValue({
-        LINEAR_ISSUE_ID: "linear-issue-1",
+        TRACKER_ISSUE_ID: "tracker-issue-1",
       }),
       reviveIssue: vi.fn(),
       buildStructuredEventMetadata: vi.fn().mockReturnValue({
@@ -15947,12 +15947,12 @@ Handle Linear issue.`,
         expect.objectContaining({
           event: "tracker.list",
           tracker: {
-            adapter: "linear",
+            adapter: "file",
             projectSlug: "symphony-0c79b11b75ea",
           },
           issue: {
             identifier: "ENG-1",
-            id: "linear-issue-1",
+            id: "tracker-issue-1",
           },
         }),
       ])
@@ -16117,7 +16117,7 @@ Handle Linear issue.`,
     await store.saveProjectConfig(projectConfig);
     const listedIssues = [] as TrackedIssueList;
     listedIssues.rateLimits = {
-      source: "linear",
+      source: "github",
       limit: 1500,
       remaining: 1496,
       resource: "graphql",
@@ -16140,7 +16140,7 @@ Handle Linear issue.`,
     const snapshot = await service.runOnce();
 
     expect(snapshot.rateLimits).toEqual({
-      source: "linear",
+      source: "github",
       limit: 1500,
       remaining: 1496,
       resource: "graphql",
