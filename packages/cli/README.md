@@ -423,8 +423,8 @@ with `--project-dir` fail closed in this mode. If endpoint setup fails, ordinary
 startup continues with a warning and expected-target stop returns
 `process_unverified`. Ordinary startup on other platforms skips the endpoint.
 
-`signal_sent` is a delivery acknowledgment, not proof of exit. The management
-adapter must verify exit, lock release, and absence of a replacement within its
+`signal_sent` is a delivery acknowledgment, not proof of exit. The caller
+must verify exit, lock release, and absence of a replacement within its
 completion deadline. `already_stopped` requires exit and released locks; a stale
 PID record belonging to that same exited target may remain. No SIGKILL escalation
 occurs in expected-target mode. A broken or removed workflow does not block stop.
@@ -500,19 +500,6 @@ gh-symphony doctor --project-dir <projectDir>
 ```
 
 ## Diagnostics
-
-Optional `observability.otlp` workflow policy is parsed without activating export.
-The orchestrator validates enabled transport settings before dispatch and excludes
-exporter credentials from workers and hooks. Exporter auth references must use
-separate names from agent/tracker credentials, even when OTLP is disabled.
-Durable local events and committed status remain authoritative; publication
-failures cannot fail a tick or mark coordination unhealthy. Production enablement
-is explicitly unsupported until packaged audits pass. Rejected startup reports
-the error once and exits with code 1, releasing locks and stopping the service.
-Valid OTLP edits require
-restart; additive JSON status reports applied versus pending settings and safe
-exporter health separately from coordination errors. See the
-[OTLP configuration contract](../../docs/configuration.md#otlp-workflow-policy-exporter-support-pending).
 
 `gh-symphony doctor` validates the most common first-run prerequisites in one pass. `gh-symphony doctor --smoke` is the recommended final preflight before `gh-symphony project start --project-dir <path> --once`: it resolves the active managed project, reads a target issue through the configured tracker integration, renders `WORKFLOW.md` for that issue, verifies the runtime command, workspace root, and configured hook paths, and exits without dispatching a worker. GitHub projects retain the GitHub Project read path and require `owner/repo#number` for explicit issues.
 
@@ -610,38 +597,3 @@ Global Options:
   --help, -h          Show help
   --version, -V       Show version
 ```
-
-The internal [management protocol](../management-protocol/README.md) package defines the v1 agent/fleet
-transport boundary for the planned management extension. It adds no CLI commands;
-existing project commands and the per-project web server retain their behavior.
-
-The internal [fleet services](../fleet-control-plane/README.md) adds private SQLite migrations
-and typed HTTPS-origin configuration for C04 (#1008). C07 (#1011) adds the
-internal lifecycle command ledger and recovery library: durable idempotency,
-claim deadlines, project fences, result reconciliation and audited unknown
-closure. Consumers supply authenticated session/project peers; fleet HTTP
-routing and new CLI commands remain separate. Its enrollment service
-provides atomic one-use tokens, scoped credential verifiers and transactional
-revocation, plus bounded same-origin browser sessions and CSRF validation. Fleet CLI commands and HTTP routing belong to later consumers;
-per-project `--web` retains its existing behavior.
-
-The internal [local management adapter](../management-agent/README.md) adds canonical folder allowlists,
-private enrollment persistence and typed lifecycle operations (C03, #1007).
-`project status` and `project stop` resolve a folder's existing alias-started
-runtime while retaining its runtime ID. Configured project/workflow paths establish
-folder ownership; a process's working directory cannot select an unrelated runtime.
-Unreadable or ambiguous runtime lookup produces a diagnostic and exit code 1.
-A missing/invalid workflow remains
-visible and does not prevent verified expected-target stop. The bundled
-`@gh-symphony/cli/management-local` module supplies the local driver; this does
-not add an `agent` command or change the per-project `--web` server into a fleet
-service. Native service launchers remain a separate implementation boundary.
-
-The bundled `@gh-symphony/cli/management-local` module also exports
-`createLocalReadAdapter(registry, configDir)` (C09, #1013). It resolves the
-registered folder's existing runtime and returns bounded recent run history,
-projected run detail and fixed `orchestrator`/`worker`/`events` log streams.
-Responses contain at most 256 KiB of UTF-8 log text with a scoped byte cursor;
-rotation/truncation reports reset, and missing or escaping selections report
-unavailable. Read access survives invalid workflow and has no process effects.
-Raw logs may contain sensitive text and are restricted to trusted operator access.

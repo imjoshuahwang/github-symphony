@@ -74,11 +74,6 @@ the tracker adapter:
 
 ### 2. Configuration — typed parsing and validation
 
-- Fleet HTTPS origin, explicit private bind and absolute user-owned persistence configuration: `packages/fleet-control-plane/src/config.ts` (C04, #1008). This is independent of workflow configuration.
-
-- Local management allowlist and enrollment persistence: `packages/management-agent` (C03, #1007), with canonical folder IDs and a user-only registry; the CLI remains responsible for workflow validation.
-- Management v1 identity, capacity, wire contracts and strict runtime schemas: `packages/management-protocol`, a dependency-free repository-local extension (C01, #1005; Epic #983). It preserves upstream workflow configuration ownership.
-
 - `WORKFLOW.md` front matter parsing and validation: `packages/core/src/workflow/`
 - Runtime kinds and their shared validation guard: `packages/core/src/workflow/config.ts`; the workflow parser and worker-channel provenance validator reuse the same catalog.
 - CLI workflow validation: `packages/cli/src/commands/workflow.ts` reuses the
@@ -87,8 +82,6 @@ the tracker adapter:
 - Workflow `server.port` configuration and the `project start --port` / `--http`
   status-API options: `packages/core/src/workflow/`,
   `packages/cli/src/commands/start.ts`
-- SDK-free owner-side OTLP resolution: `packages/core/src/workflow/otlp-resolver.ts`; explicit effective-environment input, precedence and transport validation, with secret-free diagnostics. The orchestrator invokes it before dispatch; shared loaders never resolve credentials and exporter activation remains separate.
-- Structural OTLP policy and reference provenance: `packages/core/src/workflow/otlp.ts`; shared parsing never reads exporter environment values or activates export.
 - Shared lifecycle state normalization and execution-phase classification: `packages/core/src/workflow/lifecycle.ts`
 - MCP declarations are resolved at the host boundary. Codex advertises adapter tools through dynamic-tool schemas without `config.mcp_servers`; Claude's worker starts a loopback HTTP MCP service and generates an `mcp.json` containing only its URL and ephemeral session capability. Repository/project subprocess entries are not exposed to either coding-agent child.
 - Agent-child launchers share the core `AGENT_VISIBLE_SYMPHONY_CONTEXT_ENVIRONMENT_NAMES` allowlist for non-secret run and repository identity. Codex, Claude, and custom runtimes compose that context consistently, then remove adapter-declared tracker secrets and generic host credential plumbing at the final child boundary. Adapter declarations are authoritative for identifying the active tracker's credentials. As a deliberate defense-in-depth divergence from strict tracker-name ownership, core also retains the legacy GitHub names as an unconditional custom-child backstop: removing them would make previously unreachable credentials reachable when a declaration is absent or belongs to another tracker. New tracker integrations remain declaration-driven and do not require extending that compatibility backstop.
@@ -112,11 +105,6 @@ the tracker adapter:
   status renderers label it without exposing environment names or values.
 
 ### 3. Coordination — the orchestrator
-
-- Fleet management command coordination is a separate repository extension:
-  `packages/fleet-control-plane/src/commands.ts` (C07, #1011) coordinates
-  lifecycle submission, atomic claims/expiry, per-project fencing and recovery.
-  It neither schedules issue work nor enters the orchestrator dispatch loop.
 
 - Dispatch loop, concurrency, retry, reconciliation: `packages/orchestrator/src/service.ts`.
   The effect-owning façade delegates bounded finalization and retry-record
@@ -188,25 +176,10 @@ the tracker adapter:
 
 ### 4. Execution — worker and agent subprocess
 
-The local `packages/management-agent` registry holds a process-identity heartbeat
-lock for its canonical data directory, reusing the orchestrator lock contract.
-Configuration removal does not signal or delete project processes or runtimes.
-`packages/management-agent/src/lifecycle.ts` serializes per-project operations,
-requires consumer-owned durable stop-target persistence and independently verifies
-readiness/exit/lock release through the CLI driver. `cli-process.ts` bounds calls
-and strips management credentials from child environments.
-
-- Exporter credential ownership: `packages/orchestrator/src/exporter-environment.ts`
-  uses core OTLP auth-reference provenance to strip final worker/hook environments.
-  Name-only conflicts with agent/tracker credentials fail even for disabled OTLP;
-  owner resolution remains outside worker parsing and shared workflow caches.
-  Owner validation faults enter the invalid reload path before last-known-good
-  persistence, allowing other active runs to reconcile.
-
 The CLI owns expected-target local project shutdown in
 `packages/cli/src/expected-stop.ts`, with lifecycle wiring in `commands/start.ts`
 and `commands/stop.ts`. This Execution/Integration boundary is the explicit
-repository-local management extension approved for Epic #983, C02 (#1006), not
+repository-local extension approved for Epic #983, C02 (#1006), not
 an upstream Symphony scheduler change. Strict PID/OS identity, canonical-folder
 and current PID/project/folder-lock checks reject replacements without effects.
 The command router binds expected stop to the caller-selected folder and runtime
@@ -218,35 +191,23 @@ New process titles carry a lifetime UUID before lock acquisition, making the
 recorded OS identity unique even with second-resolution `ps` start timestamps.
 Older daemons lacking the endpoint fail closed. Caller-side expected stop does not
 remove records or declare remote completion after signaling; exit/lock-release
-and replacement observation belong to the C03 local management adapter.
-No management protocol, tracker policy, or fleet behavior is added to
-`packages/control-plane` or orchestration core.
+and replacement observation belong to the caller.
 
-- Single-issue execution, approval workflow, hooks: `packages/worker`. The
-  control-plane routes, including `/api/v1/state`, are served by
-  `packages/cli/src/commands/start.ts` through `packages/control-plane`.
+- Single-issue execution and hooks: `packages/worker`. The operator HTTP
+  routes, including `/api/v1/state`, are served by
+  `packages/cli/src/commands/start.ts` using `packages/dashboard` handlers.
 - Worker run metadata uses the same core lifecycle phase resolver as orchestrator prompt rendering.
 - Multi-turn convergence compares local workspace/HEAD progress and reads canonical tracker state through `/api/v1/tracker-state` before each turn after the first and again at the failure threshold. A confirmed state outside the workflow's active states completes the worker at the next boundary. Transient or malformed reads retain HTTP, provider, or exception diagnostics and fail closed only after the configured consecutive-failure threshold. A `403 tracker_state_requests_unsupported` response is a permanent adapter capability result: the worker warns once, excludes it from failure accounting, and skips between-turn tracker gates while continuing turns. At the convergence threshold, this permanent capability gap causes the worker to accept the local non-productive signal rather than continue indefinitely. Comments, PR pushes, and active-to-active transitions do not reset the local non-productive-turn counter. Each supported read uses the tracker adapter and may consume a live provider request (up to 19 per default 20-turn session, plus the threshold read).
 - Runtime adapters: `packages/runtime-codex` (app-server protocol), `packages/runtime-claude` (print mode)
-- SDK-free token measurement origin: `packages/worker/src/index.ts` attributes the configured runtime kind after structural workflow parsing and starts with `tokenUsageMeasured: false`. Only a valid absolute token event changes that flag to true, including explicit zero; missing/invalid counts, generic `usage` maps and `last_token_usage` deltas do not qualify. `token-usage.ts` parses absolute counters; channel updates, heartbeats and turn outcomes carry additive provenance alongside existing session/turn deltas. Current Claude print result usage remains uninterpreted. Workers never resolve OTLP endpoint/header references or load an exporter SDK; stripped exporter secrets are not restored to start an agent. Legacy consumers may ignore these optional fields.
+- SDK-free token measurement origin: `packages/worker/src/index.ts` attributes the configured runtime kind after structural workflow parsing and starts with `tokenUsageMeasured: false`. Only a valid absolute token event changes that flag to true, including explicit zero; missing/invalid counts, generic `usage` maps and `last_token_usage` deltas do not qualify. `token-usage.ts` parses absolute counters; channel updates, heartbeats and turn outcomes carry additive provenance alongside existing session/turn deltas. Current Claude print result usage remains uninterpreted. Legacy consumers may ignore these optional fields.
 - Codex provider-native tools are snapshotted at worker session start, advertised through `thread/start.dynamicTools`, and executed in-process by the worker after `item/tool/call`; tool credentials and opaque issue context remain on the host side.
 - Runtime-neutral GraphQL implementations: `packages/tool-github-graphql`
 
 ### 5. Integration — tracker adapters (tracker-specific code lives only here)
 
-- Fleet lifecycle command integration: `CommandPeers` supplies synchronous
-  project identity/readiness and authenticated current-session checks on C04's
-  shared SQLite transaction. C07 composes unclaimed command invalidation with
-  enrollment revocation; HTTP routing, inventory and agent journal/process
-  effects remain consumer-owned.
-
-- Fleet SQLite schema migrations, private filesystem checks and transaction boundaries: `packages/fleet-control-plane` (C04, #1008). Atomic one-use enrollment, credential authentication and revocation invoke peer-owned session/command writes in the same SQLite transaction. First-signal updates require the current session owner's verifier. HTTP consumers remain separate; this package does not dispatch workers or stop orchestrators.
-- `packages/management-protocol` defines validated agent/fleet and operator transport boundaries without tracker, scheduler, HTTP or storage dependencies. The existing `packages/control-plane` remains the per-project server. The local `packages/management-agent` registry adds canonical allowlist inventory and typed lifecycle/reader boundaries. `packages/cli/src/management-local.ts` implements the concrete local driver and `createLocalReadAdapter` canonical-runtime read factory; `local-project-runtime.ts` resolves canonical folders through existing cached aliases and runtime ownership evidence. The CLI bundles this driver under the `management-local` module entry. Transport and fleet services remain separate delivery slices. Native-service consumers must provide a separately verified isolated project launcher; C03 rejects a service launch context without that boundary.
-
 - GitHub Project V2: `packages/tracker-github` (including the adapter-owned linked-PR canonical-subject extension; opaque `nativeRef` data never crosses into orchestration). Source issue state and linked-PR metadata remain distinct from Project workflow status; candidate polling excludes terminal states and can include other non-terminal items. It derives GitHub assignment, repository-scope, pickup-label, and fork-PR eligibility as `dispatchable` with an explainable reason. State-list filtering preserves the exact malformed-item count and bounded diagnostic samples so startup cleanup remains observable.
 - Tracker adapters expose state reads and mutations to the Coordination layer, but the orchestrator does not author issue comments. Status reports, blocker notices, and other tracker comments are worker-owned operations; GitHub approval-workflow comments remain in `packages/extension-github-workflow`.
 - File-based (E2E only): `packages/tracker-file`; fixtures may set `dispatchable` and `dispatchReason` directly to exercise the adapter-neutral scheduler gate.
-- GitHub-specific planning/approval/PR-reporting extensions: `packages/extension-github-workflow`
 - Compact adapter profiles: [GitHub Project](trackers/github-project.md)
   and [file](trackers/file.md). GitHub's
   synthetic `Archived` state is a GitHub-specific implementation choice, not
@@ -271,52 +232,8 @@ No management protocol, tracker policy, or fleet behavior is added to
 
 ### 6. Observability — events and status surfaces
 
-- Internal lifecycle owner: `packages/orchestrator/src/observability/lifecycle.ts` freezes startup transport settings, compares validated reload candidates privately (including header values), and exposes safe applied/pending descriptors. Disable edits retain the active startup provider until restart; revert clears pending state. Publication and shutdown failures remain isolated from coordination health. Shutdown stops offers and gives the owned pipeline one five-second deadline. The service initializes the SDK-free owner before dispatch and installs Logs at the existing post-append FS store boundary and Metrics at the committed snapshot/tick boundary. `observability/resource-validation.ts` applies provider resource limits before last-known-good persistence without loading the SDK. `observability/pipeline.ts` lazily composes both providers with one resource UUID, samples Logs loss deltas once into Metrics, and projects bounded per-signal diagnostics. Status uses an orchestrator-owned additive field preserved by existing readers; no core contract changes. The internal production capability defaults off until audited CLI delivery; tests may inject providers.
-
-- Bounded local management reads: `packages/management-agent/src/local-read.ts` (C09, #1013) projects run metadata and reads fixed contained streams through a trusted canonical-runtime resolver, with signed generation/byte cursors and a 256 KiB wire limit. This Integration/Observability management extension does not alter orchestration or the upstream specification.
-- Fleet durable audit schema: `packages/fleet-control-plane/src/migrations.ts`. C07 (#1011) adds lifecycle command storage with actor-scoped idempotency, a project fence covering unresolved unknown outcomes, claim/result timestamps and explicit closure metadata. `src/commands.ts` owns management-only command submission, claims, deadline recovery, same-agent ownership transfer, unknown closure, history and retention with transactional audits. Typed synchronous peer hooks supply project/session truth; agent journals and HTTP routing stay with their consumers. `src/enrollment.ts` commits create/regenerate/revoke local-owner audits and agent exchange audits with their mutations. `src/browser-security.ts` resolves local-owner browser mutations only after exact HTTPS Origin and session-bound CSRF validation. HTTP/TLS routing remains consumer-owned.
-
-- Internal Logs SDK ownership: `packages/orchestrator/src/observability/log-provider.ts` creates an isolated official `LoggerProvider` with an injected processor and explicit resource identity. Each owner generates a process UUID; no global provider, resource detector, ambient trace context or SDK batch queue is installed. Resource identity carries release version, stable project-folder ID, repository slug and tracker kind. At most 16 custom scalar attributes are permitted; conflicting reserved identity and issue/run/session/turn resource keys are rejected with value-free errors. The SDK-free activation guard rejects production partial enablement. These modules are internal and absent from normal startup composition until the complete pipeline and packaged audits pass.
-- Bounded internal Logs pipeline: `observability/log-pipeline.ts` implements the post-append offer without awaiting transport. Core normalization feeds the owned SDK provider and a single custom processor; singleton requests from the official protobuf serializer are joined as repeated `resource_logs` fields. Queue reservation includes retries/in-flight records: at most 2,048 records and 8 MiB encoded bytes, dropping newest once. One drain sends up to 256 records / 1 MiB per batch, triggered after the offer stack at threshold or every second; no second SDK queue is installed. Each record repeats its full Resource and Scope on the wire to preserve exact pre-admission byte accounting; this increases payload size and ResourceLogs count compared with grouping. This trade-off is a rollout transport-review item, with wire validity verified by an independent decoder.
-- `observability/transport.ts` owns the only retry loop and a cancellable one-shot HTTP/protobuf request. Explicit owner-resolved endpoints/headers are used without exporter environment fallback. Attempts time out after 3s, expire within a 10s total lifetime and retry at most twice with 0.5s/1s exponential jitter; only connection failures and 429/502/503/504 retry. Retry-After is honored within the remaining lifetime. Partial rejection counts rejected records without retry; response bodies are capped at 64 KiB and receiver messages are never logged. Repeated shutdown callers share one completion promise. Flush/shutdown cap the supplied shared deadline at 5s and abort requests on expiry, discarding and counting the remainder exactly once. Ordinary flush expiry preserves admission and periodic draining for subsequent records; only shutdown stops the processor timer and admission. Shutdown emits one final summary including losses from earlier expired flushes. Oversized responses are permanent local protocol failures and are never retried.
-- Local loss counters distinguish queue-full, mapping, timeout, permanent, partial and shutdown loss. Fixed-field diagnostics go directly to stderr (or an internal injected sink), never the SDK logger or `appendRunEvent`; throwing/rejecting sinks are contained. Transient warnings begin at the first failed attempt, including failures recovered by retry. Warning episodes summarize suppressed losses at most once per category per 60s; successful requests reset transport/permanent episodes, and queue recovery additionally requires occupancy below half. Shutdown loss has one local final summary. These values do not set coordination `lastError`, alter retry budgets or replay local files. `observability/activation.ts` keeps disabled initialization SDK-free and rejects production enabled initialization; only explicit internal injection can create this preparatory pipeline. Normal CLI startup remains unwired until subsequent complete-pipeline/package-audit slices.
-- Pinned Logs baseline: API `1.9.1`, Logs API/SDK and official protobuf transformer `0.223.0`, resources `2.12.0`. The transformer is a direct dependency because the adapter needs encoded-byte accounting and decoded partial-success responses. The SDK batch processor exposes count and attempt-timeout settings, but lacks byte limits, in-flight queue accounting and a shared cancellable lifecycle deadline; its stock exporter owns internal retries. A bounded owner processor and focused transport adapter are required rather than stacked SDK/adapter queues or retries. Replacing stock transport is a concrete SDK limitation subject to review before rollout, as required by the approved design. The unused stock exporter is not installed; serialization uses the pinned transformer directly. Metrics SDK `2.12.0` is pinned alongside this baseline; its self-observability is disabled to keep the approved metric catalog fixed. Logs APIs remain experimental; upgrades require wire/fault regression checks.
-
-- Internal Metrics ownership: `observability/metric-provider.ts` creates an isolated `MeterProvider`, a pull-only reader and the fixed catalog below. Its single immutable projection cache copies only catalog fields from the existing committed publication boundary. Successful, strictly increasing sequences for the bound project/process add each tick's decisions once; duplicate/stale offers and other project/process identities are ignored. Collection performs no history scan, status refresh or tracker/store access. Tick timing is recorded at the existing façade measuring point; failed ticks record duration without committed decisions. New owners generate a fresh resource UUID and reset process counters/start times, without loading/replaying historical decisions. SDK self-observability and ambient exemplars are excluded.
-- `observability/metric-pipeline.ts` collects every 10 seconds, with one in-flight immutable protobuf batch and one coalesced pending collection. Snapshot replacement is normal sampling, not a dropped-record event. The shared transport uses Metrics partial-success decoding and retries the same serialized points/timestamps; collection/retry never re-records outcomes, tokens or runtime. Pipeline losses add once to the bounded `symphony.telemetry.dropped` counter, and fixed local diagnostics never trigger immediate recursive export. The provider's loss hook can consume Logs loss accounting when the signal owners are composed in a later slice. `initializeMetrics` remains explicit internal injection only; production activation and normal CLI composition remain gated until complete-pipeline and packaged/performance audits. There is no user-facing command/configuration change in this slice.
-
-| Metric                       | Unit         | Instrument / wire temporality | Bounded attributes / meaning                                                              |
-| ---------------------------- | ------------ | ----------------------------- | ----------------------------------------------------------------------------------------- |
-| `symphony.runs.active`       | `{run}`      | ObservableGauge / N/A         | none; current reservations                                                                |
-| `symphony.runs.retrying`     | `{run}`      | ObservableGauge / N/A         | none; current retry queue, subset of active                                               |
-| `symphony.health`            | `1`          | ObservableGauge / N/A         | `state=idle,running,degraded`; one-hot, exporter failure excluded                         |
-| `symphony.poll.interval`     | `ms`         | ObservableGauge / N/A         | none; omitted when absent                                                                 |
-| `symphony.tick.outcomes`     | `{decision}` | Counter / cumulative          | `outcome=dispatched,suppressed,recovered,skipped`; each committed tick once               |
-| `symphony.tokens.total`      | `{token}`    | ObservableGauge / N/A         | `direction=input,output,total`, `runtime=codex`; measured retained-history session totals |
-| `symphony.tokens.supported`  | `1`          | ObservableGauge / N/A         | `runtime=codex,claude`; capability 1/0, independent of measured usage                     |
-| `symphony.runtime.total`     | `s`          | ObservableGauge / N/A         | none; authoritative retained-lifecycle plus live elapsed total                            |
-| `symphony.tick.duration`     | `s`          | Histogram / cumulative        | `outcome=success,failure`; bounds 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120 seconds     |
-| `symphony.telemetry.dropped` | `{record}`   | Counter / cumulative          | `signal=logs,metrics`, `reason=queue_full,timeout,permanent,shutdown,mapping,partial`     |
-
-History gauges can decrease after correction or retention; they are never added as counter deltas. Missing/unknown/Claude token provenance omits token series; valid measured Codex zero is observed. `total` is an alternative aggregate, not additive with input/output. The JS SDK reader uses delta **internally for observable gauges only** to remove stale unobserved series; protobuf gauges have no temporality field. Counter/histogram points stay cumulative with stable process start timestamps. No issue/run/session/turn IDs, model names or arbitrary labels enter metric attributes. This is a repository-local OTLP projection extension allowed by upstream §§13.2–13.3, not a change to the upstream spec; dashboards select the latest incarnation per project rather than summing retained-history gauges across UUIDs.
-
-The OTLP owner initializes once from the first usable workflow resolution, defers
-only an unusable initial workflow, and retains construction/capability rejection
-for the service lifetime. Its SDK-free resource identity helper is shared by
-reload validation and production provider construction. Escaping startup errors
-terminate CLI foreground startup with code 1; continuous tick retries remain
-owned by the orchestrator run loop.
-
 - Structured events and snapshot builder: `packages/core/src/observability/`; the project snapshot exposes the short SHA-256-derived workflow revision and load time applied during its latest tick, and `run-dispatched` records that revision. For external standalone workflows, `packages/orchestrator/src/workflow-source-identity.ts` gives the orchestrator and CLI doctor one repository resolver, compares the loaded path against a configured local repository or the project's newest persisted issue checkout/run directory (never an unrelated operator cwd), and walks reachable base-ref history. It classifies linked/current/stale/independent/no-repository-policy/unavailable policy and adds non-secret source and committed revisions to the snapshot. A historically related stale copy warns, as does an unavailable comparison that could not verify the committed ref; independent policy and a repository with no committed policy remain informational. Retry scheduling emits `run-retried` with the run and issue IDs, attempt, retry kind, due time, and error summary; a capacity-postponed reservation emits one `retry-postponed` signal per distinct (attempt, retained due time, capacity reason) reservation instead of repeating it on every reconciliation poll, while preserving the original retry error in the queue row. Retry queue rows expose the issue ID, attempt, and error. Completed-run reconciliation emits `run-finalization-deferred` with the discriminated unknown cause, diagnostic error, consecutive count, bound, and exhaustion flag, while candidate-level reconciliation emits `tracker-terminal-candidate-reconciled` before any run exists.
-- Core owns the SDK-free export projection in `packages/core/src/observability/event-export.ts`, exported through `@gh-symphony/core`. `getEventSeverity` preserves the CLI's ERROR/17, WARN/13 and INFO/9 classification for all 27 structured kinds; unknown kinds default to INFO. `normalizeEventForExport` accepts structured append events and caller-supplied observed time, project/run fallback IDs and optional integrity. Nested issue IDs take precedence over legacy flat fields; absent session/turn IDs are omitted and incomplete issue context is marked without tracker reads. The caller supplies the immutable event after append-owner secret redaction; payload and extracted event values are preserved without a second redaction pass. Caller-supplied append context is redacted by the mapper. Known context/outcome/error scalars retain their types. Only structured-event schema fields enter the payload, excluding raw worker text, agent params and trace/span fields.
-  Export strings are UTF-8 bounded: ordinary scalar strings and body at 1 KiB, the JSON payload at 16 KiB (with an explicit truncation marker; a truncated prefix need not remain valid JSON). The fixed scalar catalog stays below 64 attributes; the mapper reserves one of those slots for the payload. Invalid event/observed timestamps and JSON-incompatible payloads return a mapping-failure result for the owner to count; this pure function performs no I/O or clock reads and changes neither append input nor local NDJSON/integrity/mirror behavior. The projection is an additive repository-local remote-sink contract under upstream §§13.1–13.3, with no intentional spec divergence. SDK/transport ownership resides in the orchestrator; production activation remains gated. The orchestrator now supplies optional post-persistence offers through the SDK-free publication contract below; CLI exporter activation remains pending.
-- Local-first publication: `packages/core/src/observability/publication.ts` defines optional synchronous `offerEvent`, `offerSnapshot` and `observeTick` callbacks; absence is a no-op. `packages/orchestrator/src/fs-store.ts` retains the existing order: redact once, serialize/hash, durable primary append, best-effort mirror (including its existing warning), then offer the recursively frozen redacted event with append-owner run/project IDs, integrity and observed time. Primary failure propagates and offers nothing; mirror failure still permits one offer. NDJSON serialization and integrity are unchanged, and neither startup replay nor mirror ingestion is introduced.
-- Coordination commit boundary: `packages/orchestrator/src/service.ts` offers a frozen metric projection only after `saveProjectStatus` succeeds, using the same retained run set as the authoritative snapshot. A random service-instance ID scopes a strictly increasing committed sequence; failed commits consume no sequence, and status reads publish nothing. This identity is independent of wall-clock timestamp collisions and does not alter persisted status schema. A monotonic timer measures each serialized reconciliation invocation (success or failure), including durable work and excluding queue wait, awaited `onTick` and poll sleep. Publication is separate from the existing awaited `onTick` callback.
-- Failure containment: `packages/orchestrator/src/publication.ts` contains callback throws and accidental async rejections without awaiting promises, emitting diagnostic payloads, appending diagnostic events or setting coordination `lastError`. Callbacks must only enqueue bounded work synchronously; SDK mapping/drain/network export remains outside the append/tick stack. No runtime SDK, provider, exporter activation or network transport is introduced here. These additive logging/snapshot hooks conform to upstream §§13.1–13.3 with no intentional divergence; extracted coordination decisions remain pure.
-- SDK-free metric inputs: `packages/core/src/observability/metric-projection.ts` builds a frozen, read-only projection from a committed project snapshot and the same retained run set. Active/retrying gauges and one-hot health reflect current reservations; tick outcomes remain per-tick decisions for a future consumer to count once. Token and runtime totals are absolute retained-history gauges, never increments on collection. Shared `run-accounting.ts` keeps snapshot arithmetic and recovery lifecycle runtime authoritative; attached per-issue cumulative tokens are not summed again. Projection tokens include only `codex-app-server` records with `tokenUsageMeasured: true` and non-null token data, preserving valid measured zero and omitting absent measurements. Capability flags are constant for this release (Codex 1, Claude 0). Optional run and worker-channel provenance contracts leave legacy records readable and unknown; the worker emits runtime kind and measurement provenance on token-bearing updates, heartbeats, and turn outcomes; the orchestrator persists supplied provenance and retains it during recovery without inferring it from current runtime configuration. Heartbeat and codex_update usage is cumulative; turn_completed and turn_failed carry per-turn deltas that remain in events.ndjson. Saving turn provenance advances the run update timestamp without replacing its cumulative token usage. Existing persisted snapshot numeric totals still include all token-bearing records. Projection fields contain no tracker-native identifiers or labels. This preparatory slice adds no exporter, counters, CLI command or status API fields.
-- Gated snapshot Metrics consumer: `packages/orchestrator/src/observability/metric-provider.ts` records each committed sequence once into cumulative process outcome counters and duration histograms; retained-history values remain absolute gauges. Outcome counts must be non-negative safe integers before entering the cumulative stream; invalid counts are omitted without preventing later committed snapshots. Collection reads only the cached projection. Local Metrics diagnostics maintain bounded reason-specific failure episodes, warn immediately on first failure, aggregate suppressed losses into at-most-once-per-60-second warnings, and emit pending-loss summaries when recovering or closing. The provider owns fixed Codex/Claude capability flags; cached source time is metadata, while SDK observation time supplies wire timestamps. Production activation remains gated.
-- Operator HTTP control plane (bearer auth, redaction): `packages/control-plane`
-- Browser dashboard: `packages/dashboard` — details in [../packages/control-plane/README.md](../packages/control-plane/README.md)
+- Operator HTTP API handlers (bearer auth, redaction): `packages/dashboard`, hosted by `packages/cli/src/commands/start.ts`
 - Runtime state files: `.runtime/orchestrator/` (`workspaces/<id>/`, `runs/<run-id>/`)
 - Project daemon PID records: `${GH_SYMPHONY_CONFIG_DIR:-~/.gh-symphony}/projects/<project-id>/daemon.pid`; per-runtime-root project locks live beside the runtime state. A second lock under the OS temporary directory is keyed by a SHA-256 digest of the canonical project-folder path. Both retain heartbeat leases and process-owner identity verification.
 
@@ -351,16 +268,14 @@ credential-bearing commands never read the child-controlled checkout's remote
 or hook configuration.
 
 ```
-cli (bundles: orchestrator, worker, control-plane, dashboard, runtime-claude, tracker-github, core)
+cli (bundles: orchestrator, worker, dashboard, runtime-claude, tracker-github, core)
 orchestrator ──→ core, worker, runtime-claude, runtime-codex, tracker-file, tracker-github
-worker ────────→ core, extension-github-workflow, runtime-claude, runtime-codex, tool-github-graphql, tracker-github
-control-plane ─→ core, dashboard
+worker ────────→ core, runtime-claude, runtime-codex, tool-github-graphql, tracker-github
 dashboard ─────→ core
 runtime-claude ─→ core, tool-github-graphql, tracker-github
 runtime-codex ──→ core, tool-github-graphql
 tracker-github ─→ core, tool-github-graphql
 tracker-file ───→ core
-extension-github-workflow ─→ core
 tool-github-graphql ─→ core
 core ─→ (none; no external dependencies either)
 ```

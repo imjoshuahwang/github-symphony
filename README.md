@@ -166,8 +166,6 @@ gh-symphony project start --project-dir <path>                   # Start (foregr
 gh-symphony project start --project-dir <path> --daemon          # Start (background)
 gh-symphony project stop --project-dir <path>                    # Stop the daemon
 gh-symphony project stop --project-dir <path> --force            # Force stop with SIGKILL
-gh-symphony project start --project-dir <path> --web             # Browser control-plane dashboard at http://127.0.0.1:4680/
-gh-symphony project start --project-dir <path> --web --bind-all  # Explicitly bind the dashboard to all interfaces
 ```
 
 For automation with a persisted process target, use
@@ -200,33 +198,10 @@ values through this surface.
 
 ### Observability Surfaces
 
-Optional `observability.otlp` workflow policy is parsed without activating export.
-The orchestrator validates enabled transport settings before dispatch and excludes
-exporter credentials from workers and hooks. Exporter auth references must use
-separate names from agent/tracker credentials, even when OTLP is disabled.
-Durable local events and committed status remain authoritative; publication
-failures cannot fail a tick or mark coordination unhealthy. Production enablement
-is explicitly unsupported until packaged audits pass. Rejected startup reports
-the error once and exits with code 1, releasing locks and stopping the service.
-Valid OTLP edits require
-restart; additive JSON status reports applied versus pending settings and safe
-exporter health separately from coordination errors. See the
-[OTLP configuration contract](docs/configuration.md#otlp-workflow-policy-exporter-support-pending).
-
-Use `gh-symphony project start --project-dir <path> --web` when you want the browser-based
-control-plane dashboard. It starts the orchestrator and serves the React SPA at
-`http://127.0.0.1:4680/` by default. The dashboard includes the project
-overview at `/` and per-issue detail pages at `/issues/<encoded-identifier>`,
-where issue identifiers such as `acme/web#42` are URL-encoded as
-`acme%2Fweb%2342`. It is backed by the same JSON API used for status snapshots
-and refresh.
-
 HTTP servers bind to `127.0.0.1` unless `--bind-all` is explicitly supplied.
 Every `/api/v1/*` request requires the bearer token printed by `project start`.
 Set `GH_SYMPHONY_HTTP_TOKEN` to provide a stable shared secret; otherwise the
-CLI generates one for the process. The `--web` launch URL carries the token in
-the URL fragment, moves it to session storage, and removes it from the visible
-URL before API requests begin.
+CLI generates one for the process.
 
 Use `gh-symphony project start --project-dir <path> --http` when you only need the JSON status API, for
 example from CI, scripts, or another monitoring process. It exposes
@@ -262,7 +237,7 @@ The expected first success is an opened PR for the managed issue. After that, th
 
 If GitHub reports that the source issue is already closed, or that a linked closing PR is merged, Symphony does not dispatch a worker even when the Project item was accidentally left in an active status. It reconciles that Project item to the first terminal status configured in `WORKFLOW.md` and emits a `tracker-terminal-candidate-reconciled` event.
 
-If the issue does not dispatch, inspect `project status --watch`, the dashboard, and the run events under the configured runtime directory.
+If the issue does not dispatch, inspect `project status --watch` and the run events under the configured runtime directory.
 
 ## Advanced Setup Options
 
@@ -432,7 +407,7 @@ gh-symphony project stop                       # Stop its daemon
 gh-symphony project list                       # List cached projects
 ```
 
-The project folder is the runtime source of truth and the address: every command derives the runtime from the folder's `WORKFLOW.md` on each start, so editing the workflow takes effect on the next start with no registration step. Status exposes both the loaded project workflow identity and the current committed repository-policy identity when a configured local checkout or persisted issue checkout is available. `doctor` warns when a regular-file project workflow is a stale copy of an older reachable repository revision, and both surfaces warn when the committed comparison cannot be determined; symlinks, current copies, and deliberately independent policies remain distinct non-stale identities. For remote clone URLs, status and doctor share the project's newest persisted checkout as their local comparison source instead of using the operator's current directory. The comparison never fetches. `project start --help` lists its runtime flags, including `--once`, `--daemon`, `--assigned-only`, `--bind-all`, `--http`, `--web`, `--log-level`, and `--project-dir`. `--assigned-only` is input to the tracker adapter's `dispatchable` derivation; the scheduler consumes that normalized eligibility result rather than interpreting provider-specific assignment rules. Starting refuses a tracker mapping that overlaps a project already running against the same repository, and asks for confirmation when the overlapping project is stopped. Two projects on one repository stay disjoint through `tracker.provider.pickup_labels.include`, which GitHub applies as an any-match candidate pre-filter. `tracker.required_labels` is separate: every configured label must remain present for an issue to be routable, including between worker turns. Label comparison is case-insensitive and ignores surrounding whitespace, so `Agent`, `agent`, and `" AGENT "` are the same label. `repository.clone_url` overrides the derived clone URL for mirrors, Enterprise hosts, or local paths. See [docs/configuration.md](docs/configuration.md) for the project `.env` loading order and skill layering details.
+The project folder is the runtime source of truth and the address: every command derives the runtime from the folder's `WORKFLOW.md` on each start, so editing the workflow takes effect on the next start with no registration step. Status exposes both the loaded project workflow identity and the current committed repository-policy identity when a configured local checkout or persisted issue checkout is available. `doctor` warns when a regular-file project workflow is a stale copy of an older reachable repository revision, and both surfaces warn when the committed comparison cannot be determined; symlinks, current copies, and deliberately independent policies remain distinct non-stale identities. For remote clone URLs, status and doctor share the project's newest persisted checkout as their local comparison source instead of using the operator's current directory. The comparison never fetches. `project start --help` lists its runtime flags, including `--once`, `--daemon`, `--assigned-only`, `--bind-all`, `--http`, `--log-level`, and `--project-dir`. `--assigned-only` is input to the tracker adapter's `dispatchable` derivation; the scheduler consumes that normalized eligibility result rather than interpreting provider-specific assignment rules. Starting refuses a tracker mapping that overlaps a project already running against the same repository, and asks for confirmation when the overlapping project is stopped. Two projects on one repository stay disjoint through `tracker.provider.pickup_labels.include`, which GitHub applies as an any-match candidate pre-filter. `tracker.required_labels` is separate: every configured label must remain present for an issue to be routable, including between worker turns. Label comparison is case-insensitive and ignores surrounding whitespace, so `Agent`, `agent`, and `" AGENT "` are the same label. `repository.clone_url` overrides the derived clone URL for mirrors, Enterprise hosts, or local paths. See [docs/configuration.md](docs/configuration.md) for the project `.env` loading order and skill layering details.
 
 ### Official Container Deployment
 
@@ -955,7 +930,6 @@ gh-symphony project start --project-dir <path> --once             # run startup 
 gh-symphony project start --project-dir <path> --http             # continuous polling + JSON status API on 127.0.0.1:4680
 gh-symphony project start --project-dir <path> --port 4800        # preferred alias for --http with an explicit port
 gh-symphony project start --project-dir <path> --once --http      # keep the JSON status API available after the one-shot tick until Ctrl+C
-gh-symphony project start --project-dir <path> --web              # continuous polling + browser dashboard on 127.0.0.1:4680
 
 # Via the orchestrator package directly
 pnpm --filter @gh-symphony/orchestrator start -- run
@@ -986,7 +960,7 @@ Healthy continuation retries do not consume the failure budget.
 
 Read orchestration state via the status API (`/api/v1/state`) rather than reading status files directly.
 
-Run `gh-symphony doctor --smoke` before the first `start --once` when you want a safe pre-dispatch readiness check. `gh-symphony project start --project-dir <path> --once` is the first production-like run: it validates the real GitHub Project binding, project `WORKFLOW.md`, and dispatch eligibility, then performs one poll/reconcile/dispatch tick instead of starting a long-lived poller. Add `--port [port]` when you want the JSON status API available; `--http [port]` remains a supported alias. With `--once --port`, the one-shot tick still completes, but the HTTP server stays up afterward and the process keeps the project lock until you stop it with `Ctrl+C`. `server.port` in `WORKFLOW.md` enables the same API when no CLI port is supplied. Add `--web` instead when you want the browser dashboard at `/` plus the JSON API.
+Run `gh-symphony doctor --smoke` before the first `start --once` when you want a safe pre-dispatch readiness check. `gh-symphony project start --project-dir <path> --once` is the first production-like run: it validates the real GitHub Project binding, project `WORKFLOW.md`, and dispatch eligibility, then performs one poll/reconcile/dispatch tick instead of starting a long-lived poller. Add `--port [port]` when you want the JSON status API available; `--http [port]` remains a supported alias. With `--once --port`, the one-shot tick still completes, but the HTTP server stays up afterward and the process keeps the project lock until you stop it with `Ctrl+C`. `server.port` in `WORKFLOW.md` enables the same API when no CLI port is supplied.
 
 Project start also holds a `.gh-symphony-start.lock` identity lease in the
 canonical project folder. Consequently, pointing separate `--config` runtime
@@ -1064,43 +1038,6 @@ immediately rather than pausing for interactive confirmation.
 - [Code of Conduct](CODE_OF_CONDUCT.md) — community expectations for issues, discussions, and pull requests.
 - [MIT License](LICENSE) — project license terms.
 
-## Management protocol
-
-The internal [management protocol](packages/management-protocol/README.md) package defines the v1 agent/fleet
-transport boundary for the planned management extension. It adds no CLI commands;
-existing project commands and the per-project web server retain their behavior.
-
-The internal [fleet services](packages/fleet-control-plane/README.md) adds private SQLite migrations
-and typed HTTPS-origin configuration for C04 (#1008). C07 (#1011) adds the
-internal lifecycle command ledger and recovery library: durable idempotency,
-claim deadlines, project fences, result reconciliation and audited unknown
-closure. Consumers supply authenticated session/project peers; fleet HTTP
-routing and new CLI commands remain separate. Its enrollment service
-provides atomic one-use tokens, scoped credential verifiers and transactional
-revocation, plus bounded same-origin browser sessions and CSRF validation. Fleet CLI commands and HTTP routing belong to later consumers;
-per-project `--web` retains its existing behavior.
-
 ## License
 
 This project is released under the [MIT License](LICENSE).
-
-The internal [local management adapter](packages/management-agent/README.md) adds canonical folder allowlists,
-private enrollment persistence and typed lifecycle operations (C03, #1007).
-`project status` and `project stop` resolve a folder's existing alias-started
-runtime while retaining its runtime ID. Configured project/workflow paths establish
-folder ownership; a process's working directory cannot select an unrelated runtime.
-Unreadable or ambiguous runtime lookup produces a diagnostic and exit code 1.
-A missing/invalid workflow remains
-visible and does not prevent verified expected-target stop. The bundled
-`@gh-symphony/cli/management-local` module supplies the local driver; this does
-not add an `agent` command or change the per-project `--web` server into a fleet
-service. Native service launchers remain a separate implementation boundary.
-
-The bundled `@gh-symphony/cli/management-local` module also exports
-`createLocalReadAdapter(registry, configDir)` (C09, #1013). It resolves the
-registered folder's existing runtime and returns bounded recent run history,
-projected run detail and fixed `orchestrator`/`worker`/`events` log streams.
-Responses contain at most 256 KiB of UTF-8 log text with a scoped byte cursor;
-rotation/truncation reports reset, and missing or escaping selections report
-unavailable. Read access survives invalid workflow and has no process effects.
-Raw logs may contain sensitive text and are restricted to trusted operator access.

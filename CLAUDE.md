@@ -48,11 +48,10 @@ All work must be classified against these layers (per `AGENTS.md`):
 ```
 cli (published entrypoint; bundles the rest via devDependencies)
 orchestrator ──→ core, worker, runtime-claude, runtime-codex, tracker-file, tracker-github
-worker ────────→ core, extension-github-workflow, runtime-claude, runtime-codex, tool-github-graphql, tracker-github
-control-plane ─→ core, dashboard
+worker ────────→ core, runtime-claude, runtime-codex, tool-github-graphql, tracker-github
 runtime-{claude,codex} ─→ core, tool-github-graphql (Claude also uses tracker adapters for host-side tools)
 tracker-{github,file} ─→ core (+tool-github-graphql for github)
-extension-github-workflow, dashboard, tool-github-graphql ─→ core
+dashboard, tool-github-graphql ─→ core
 ```
 
 The full component-to-package map, sliced by Symphony layer, lives in [docs/architecture.md](docs/architecture.md) — keep it updated when moving code across packages or layers.
@@ -62,12 +61,11 @@ The full component-to-package map, sliced by Symphony layer, lives in [docs/arch
 - **`packages/core`** — Domain types, contracts (`OrchestratorStateStore`, `OrchestratorTrackerAdapter`), workflow loading/config, lifecycle (`WorkflowExecutionPhase`: planning → human-review → implementation → awaiting-merge → completed), MCP config composition, observability snapshots. No external dependencies.
 - **`packages/cli`** — `gh-symphony` published entrypoint: `setup`, `doctor`, `workflow`, `config`, `repo` (init/start/stop/status/run/logs/recover/explain), and `project` (standalone project list/start/status/stop, addressed by folder).
 - **`packages/orchestrator`** — `OrchestratorService` dispatch loop, filesystem-backed state store (`OrchestratorFsStore`), shared bare clone cache + worktree populate, layered skill injection, leases/retries/recovery.
-- **`packages/worker`** — Runs a single issue; drives a runtime adapter; manages approval workflow and hooks. The CLI start command hosts `/api/v1/state` through the control plane.
+- **`packages/worker`** — Runs a single issue; drives a runtime adapter; manages hooks. The CLI start command hosts `/api/v1/state` using dashboard handlers.
 - **`packages/runtime-codex` / `packages/runtime-claude`** — Agent runtime adapters (Codex app-server protocol; Claude print mode).
 - **`packages/tracker-github` / `-file`** — Tracker adapters implementing `OrchestratorTrackerAdapter` (file is E2E-only).
-- **`packages/control-plane` / `packages/dashboard`** — Operator HTTP API (bearer-authenticated, default `:4680`) and browser dashboard.
+- **`packages/dashboard`** — Filesystem-backed handlers for the operator JSON API (bearer-authenticated, default `:4680`).
 - **`packages/tool-github-graphql`** — Runtime-neutral GraphQL MCP tool.
-- **`packages/extension-github-workflow`** — GitHub-specific planning/approval/PR-reporting extensions.
 
 ### Key Contracts (in core)
 
