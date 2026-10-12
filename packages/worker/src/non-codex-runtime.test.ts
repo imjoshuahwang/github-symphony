@@ -11,8 +11,45 @@ import {
 } from "@gh-symphony/core";
 import {
   CustomCommandWorkerRuntimeAdapter,
+  FINAL_MESSAGE_MAX_BYTES,
   createWorkerNonCodexRuntimeAdapter,
+  extractFinalResultText,
+  writeFinalMessage,
+  type WorkerNonCodexTurnResult,
 } from "./non-codex-runtime.js";
+
+describe("writeFinalMessage", () => {
+  const claudeResult = (...results: string[]) =>
+    ({
+      records: [
+        { message: { type: "assistant" } },
+        ...results.map((result) => ({ message: { type: "result", result } })),
+      ],
+    }) as unknown as WorkerNonCodexTurnResult;
+
+  it("extracts the last result record text", () => {
+    expect(extractFinalResultText(claudeResult("first", "last"))).toBe("last");
+    expect(extractFinalResultText(claudeResult())).toBeNull();
+  });
+
+  it("writes final-message.txt truncated to 64KB", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "final-message-"));
+    await writeFinalMessage(
+      dir,
+      claudeResult("x".repeat(FINAL_MESSAGE_MAX_BYTES + 10))
+    );
+    const written = await readFile(join(dir, "final-message.txt"), "utf8");
+    expect(written).toHaveLength(FINAL_MESSAGE_MAX_BYTES);
+  });
+
+  it("skips writing when there is no result text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "final-message-"));
+    await writeFinalMessage(dir, claudeResult());
+    await expect(
+      readFile(join(dir, "final-message.txt"), "utf8")
+    ).rejects.toThrow();
+  });
+});
 
 describe("CustomCommandWorkerRuntimeAdapter", () => {
   it("spawns a custom command without the Codex JSON-RPC protocol", async () => {

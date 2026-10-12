@@ -548,6 +548,46 @@ describe("ClaudePrintRuntimeAdapter", () => {
     );
   });
 
+  it("skips credential staging and forwards CLAUDE_CODE_OAUTH_TOKEN to the isolated child", async () => {
+    const root = await createTempDir();
+    const hostHome = join(root, "host-home");
+    const runtimeDirectory = join(root, "runtime");
+    await mkdir(join(hostHome, ".claude"), { recursive: true });
+    await writeFile(
+      join(hostHome, ".claude", ".credentials.json"),
+      JSON.stringify({ claudeAiOauth: { accessToken: "file-token" } })
+    );
+    const envs: NodeJS.ProcessEnv[] = [];
+    const { child, stdout, stderr } = createStubChild();
+    const spawnImpl: SpawnLike = (_command, _args, options) => {
+      envs.push(options.env ?? {});
+      queueMicrotask(() => {
+        stdout.end();
+        stderr.end();
+        child.emit("close", 0, null);
+      });
+      return child;
+    };
+    const adapter = new ClaudePrintRuntimeAdapter(
+      {
+        workingDirectory: root,
+        runtimeDirectory,
+        env: { HOME: hostHome, CLAUDE_CODE_OAUTH_TOKEN: "oauth-token" },
+      },
+      { spawnImpl }
+    );
+
+    await adapter.prepare({ runId: "run-1" });
+    await adapter.spawnTurn({ messages: [] });
+
+    const childHome = join(runtimeDirectory, "child-home");
+    await expect(
+      stat(join(childHome, ".claude", ".credentials.json"))
+    ).rejects.toThrow();
+    expect(envs[0]?.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token");
+    expect(envs[0]?.HOME).toBe(childHome);
+  });
+
   it("uses configured args and strict mcp isolation for spawned argv", async () => {
     const calls: Array<ReadonlyArray<string>> = [];
     const { child, stdout, stderr } = createStubChild();

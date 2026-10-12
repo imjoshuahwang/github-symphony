@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import {
   formatClaudePreflightText,
@@ -64,25 +64,37 @@ describe("Claude runtime preflight", () => {
     });
   });
 
-  it("warns when local Claude Code auth is allowed and no API key is configured", async () => {
+  it("accepts local credentials, an OAuth token, or fails clearly with neither", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "claude-preflight-local-"));
-    const report = await runClaudePreflight(
-      {
-        cwd,
-        env: {},
-        command: "claude",
-        authMode: "local-or-api-key",
-      },
-      { execFileSync: vi.fn(execSuccess) as never }
-    );
+    const run = (env: NodeJS.ProcessEnv) =>
+      runClaudePreflight(
+        { cwd, env, command: "claude", authMode: "local-or-api-key" },
+        { execFileSync: vi.fn(execSuccess) as never }
+      );
+    const authCheck = (report: Awaited<ReturnType<typeof run>>) =>
+      report.checks.find((check) => check.id === "anthropic_api_key");
 
-    expect(report.ok).toBe(true);
-    expect(
-      report.checks.find((check) => check.id === "anthropic_api_key")
-    ).toMatchObject({
-      status: "warn",
-      title: "Claude authentication",
-      summary: expect.stringContaining("Claude Code local login"),
+    const missing = await run({ HOME: cwd });
+    expect(missing.ok).toBe(false);
+    expect(authCheck(missing)).toMatchObject({
+      status: "fail",
+      summary: expect.stringContaining("CLAUDE_CODE_OAUTH_TOKEN"),
+      details: { source: "missing" },
+    });
+
+    const token = await run({ HOME: cwd, CLAUDE_CODE_OAUTH_TOKEN: "t" });
+    expect(token.ok).toBe(true);
+    expect(authCheck(token)).toMatchObject({
+      status: "pass",
+      details: { source: "oauth-token" },
+    });
+
+    await mkdir(join(cwd, ".claude"));
+    await writeFile(join(cwd, ".claude", ".credentials.json"), "{}");
+    const local = await run({ HOME: cwd });
+    expect(local.ok).toBe(true);
+    expect(authCheck(local)).toMatchObject({
+      status: "pass",
       details: { source: "local" },
     });
   });

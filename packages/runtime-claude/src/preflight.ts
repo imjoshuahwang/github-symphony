@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 export type ClaudePreflightStatus = "pass" | "warn" | "fail";
@@ -45,8 +46,9 @@ export type ClaudePreflightOptions = {
   command?: string;
   includeGhAuth?: boolean;
   /**
-   * `local-or-api-key` allows Claude Code's local OAuth/keychain login path
-   * and reports a missing API key as a warning.
+   * `local-or-api-key` accepts ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, or
+   * Claude Code's local login at ~/.claude/.credentials.json, and fails when
+   * none is present (the agent child runs with an isolated HOME).
    *
    * `api-key-required` is for headless/bare runtime paths where local Claude
    * Code auth is not sufficient.
@@ -71,7 +73,7 @@ export async function runClaudePreflight(
   const checks: ClaudePreflightCheck[] = [];
 
   checks.push(checkClaudeBinary(command, options.cwd, deps));
-  checks.push(checkClaudeAuthentication(env, options));
+  checks.push(await checkClaudeAuthentication(env, options, deps));
   checks.push(await checkWorkspaceMcpConfig(options.cwd, deps));
   if (options.includeGhAuth) {
     checks.push(checkGhAuthentication(options.cwd, deps));
@@ -234,10 +236,11 @@ function checkGhAuthentication(
   }
 }
 
-function checkClaudeAuthentication(
+async function checkClaudeAuthentication(
   env: NodeJS.ProcessEnv,
-  options: Pick<ClaudePreflightOptions, "authMode">
-): ClaudePreflightCheck {
+  options: Pick<ClaudePreflightOptions, "authMode">,
+  deps: Pick<ClaudePreflightDependencies, "access">
+): Promise<ClaudePreflightCheck> {
   const authMode = options.authMode ?? "api-key-required";
   if (env.ANTHROPIC_API_KEY?.trim()) {
     return pass(
@@ -249,13 +252,36 @@ function checkClaudeAuthentication(
   }
 
   if (authMode === "local-or-api-key") {
-    return warn(
-      "anthropic_api_key",
-      "Claude authentication",
-      "ANTHROPIC_API_KEY is not configured; Claude Code local login may be used for this non-bare runtime.",
-      "If this runtime will run headlessly or with runtime.isolation.bare: true, set ANTHROPIC_API_KEY.",
-      { source: "local" }
+    if (env.CLAUDE_CODE_OAUTH_TOKEN?.trim()) {
+      return pass(
+        "anthropic_api_key",
+        "Claude authentication",
+        "CLAUDE_CODE_OAUTH_TOKEN is configured in the environment.",
+        { source: "oauth-token" }
+      );
+    }
+    const credentialsPath = join(
+      env.HOME ?? homedir(),
+      ".claude",
+      ".credentials.json"
     );
+    try {
+      await deps.access(credentialsPath, constants.R_OK);
+      return pass(
+        "anthropic_api_key",
+        "Claude authentication",
+        `Claude Code local login credentials found at ${credentialsPath}.`,
+        { source: "local" }
+      );
+    } catch {
+      return fail(
+        "anthropic_api_key",
+        "Claude authentication",
+        `No Claude credentials: ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are unset and ${credentialsPath} does not exist.`,
+        "Run 'claude setup-token' and export CLAUDE_CODE_OAUTH_TOKEN, set ANTHROPIC_API_KEY, or log in so ~/.claude/.credentials.json exists.",
+        { source: "missing" }
+      );
+    }
   }
 
   return fail(

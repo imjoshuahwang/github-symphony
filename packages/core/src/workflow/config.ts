@@ -1,4 +1,7 @@
-import type { WorkflowLifecycleConfig } from "./lifecycle.js";
+import {
+  normalizeWorkflowState,
+  type WorkflowLifecycleConfig,
+} from "./lifecycle.js";
 
 export type WorkflowHooksConfig = {
   afterCreate: string | null;
@@ -151,6 +154,27 @@ export type WorkflowRuntimeConfig = {
   timeoutSources: WorkflowRuntimeTimeoutSourcesConfig;
 };
 
+/** Per-state runtime override from `runtime_by_state.<state>`. */
+export type WorkflowStateRuntimeConfig = {
+  runtime: WorkflowRuntimeConfig;
+  /** Overrides `agent.max_turns` for this state when set. */
+  maxTurns: number | null;
+};
+
+/** Review loop policy from the `review:` front matter block. */
+export type WorkflowReviewConfig = {
+  reviewState: string;
+  reworkState: string;
+  needsHumanState: string;
+  maxRounds: number;
+  maxContinuations: number;
+  labelPrefix: string;
+};
+
+export const DEFAULT_REVIEW_MAX_ROUNDS = 3;
+export const DEFAULT_REVIEW_MAX_CONTINUATIONS = 2;
+export const DEFAULT_REVIEW_LABEL_PREFIX = "symphony:";
+
 export type WorkflowSourceFormat =
   | "front-matter"
   | "legacy-sectioned"
@@ -170,6 +194,9 @@ export type WorkflowDefinition = {
   hooks: WorkflowHooksConfig;
   agent: WorkflowAgentConfig;
   runtime: WorkflowRuntimeConfig | null;
+  /** Keyed by normalized state name; optional for literal compatibility. */
+  runtimeByState?: Record<string, WorkflowStateRuntimeConfig>;
+  review?: WorkflowReviewConfig | null;
   codex: WorkflowCodexConfig;
   lifecycle: WorkflowLifecycleConfig;
   format: WorkflowSourceFormat;
@@ -306,4 +333,34 @@ export function resolveWorkflowRuntimeTimeouts(
   workflow: Pick<WorkflowDefinition, "runtime" | "codex">
 ): WorkflowRuntimeTimeoutsConfig {
   return workflow.runtime?.timeouts ?? workflow.codex;
+}
+
+/**
+ * Returns the workflow with `runtime` (and `agent.maxTurns`) swapped for the
+ * `runtime_by_state` entry matching `state`; unchanged when no entry matches.
+ */
+export function resolveWorkflowForState<T extends WorkflowDefinition>(
+  workflow: T,
+  state: string | null | undefined
+): T {
+  const entry = state
+    ? workflow.runtimeByState?.[normalizeWorkflowState(state)]
+    : undefined;
+  if (!entry) {
+    return workflow;
+  }
+
+  const resolved: T = {
+    ...workflow,
+    runtime: entry.runtime,
+    agent: {
+      ...workflow.agent,
+      maxTurns: entry.maxTurns ?? workflow.agent.maxTurns,
+    },
+  };
+  if ("agentCommand" in resolved) {
+    (resolved as T & { agentCommand: string }).agentCommand =
+      resolveWorkflowRuntimeCommand(resolved);
+  }
+  return resolved;
 }

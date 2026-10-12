@@ -2257,7 +2257,7 @@ function buildRuntimeInstallGuidance(
     return [
       "Install Claude Code from https://code.claude.com/docs/en/quickstart",
       "and ensure the runtime binary is on PATH.",
-      "Then set ANTHROPIC_API_KEY or complete a local Claude login for non-bare runs.",
+      "Then set ANTHROPIC_API_KEY, export CLAUDE_CODE_OAUTH_TOKEN (claude setup-token), or complete a local Claude login for non-bare runs.",
     ].join(" ");
   }
 
