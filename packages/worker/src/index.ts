@@ -5,6 +5,7 @@ import {
   classifySessionExit,
   DEFAULT_AGENT_INPUT_REQUIRED_REASON,
   parseWorkflowMarkdown,
+  resolveWorkflowForState,
   resolveWorkflowRuntimeCommand,
   type AgentEvent,
   type AgentRuntimeAdapter,
@@ -47,6 +48,7 @@ import {
   createWorkerNonCodexRuntimeAdapter,
   type WorkerNonCodexRuntimeAdapter,
   type WorkerNonCodexTurnResult,
+  writeFinalMessage,
 } from "./non-codex-runtime.js";
 import { resolveExitRunPhase } from "./run-phase.js";
 import {
@@ -564,10 +566,11 @@ async function startAssignedRun() {
       launcherEnv.SYMPHONY_WORKFLOW_PATH ||
       join(launcherEnv.WORKING_DIRECTORY!, "WORKFLOW.md");
     runtimeState.runPhase = "building_prompt";
-    const workflow = parseWorkflowMarkdown(
-      await readFile(workflowPath, "utf8"),
-      launcherEnv,
-      { workflowPath }
+    const workflow = resolveWorkflowForState(
+      parseWorkflowMarkdown(await readFile(workflowPath, "utf8"), launcherEnv, {
+        workflowPath,
+      }),
+      launcherEnv.SYMPHONY_ISSUE_STATE
     );
     runtimeState.runtimeKind = workflow.runtime?.kind ?? "codex-app-server";
     const route = resolveWorkerRuntimeRoute(workflow);
@@ -836,6 +839,12 @@ async function runNonCodexRuntimeAdapterLifecycle(
         runtimeKind,
         turnInput,
         env
+      );
+      await writeFinalMessage(env.WORKSPACE_RUNTIME_DIR, result).catch(
+        (error: unknown) =>
+          process.stderr.write(
+            `[worker] failed to write final message: ${String(error)}\n`
+          )
       );
       if (isNonCodexTurnFailure(result)) {
         terminalFailure = describeNonCodexTurnFailure(result);

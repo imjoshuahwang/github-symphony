@@ -159,6 +159,42 @@ together. Validation occurs only when a configured, trusted hook will execute,
 so an unused or trust-disabled hook remains skipped. This allowlist affects hooks
 only and does not expose its entries to the coding-agent child.
 
+## Per-State Runtime Routing And Review
+
+`runtime_by_state` overrides the top-level `runtime` block for issues in a
+given tracker state. Each key must name one of `tracker.active_states`
+(matched case-insensitively); any other key fails validation. An entry accepts
+the same fields as `runtime` plus an optional `max_turns`, which overrides
+`agent.max_turns` for that state. States without an entry use the top-level
+`runtime` and `agent.max_turns`. The worker resolves the entry from
+`SYMPHONY_ISSUE_STATE` at startup.
+
+```yaml
+runtime_by_state:
+  In code review:
+    kind: claude-print
+    max_turns: 4
+review:
+  review_state: In code review
+  rework_state: In progress
+  needs_human_state: Needs human
+```
+
+The optional `review:` block configures the review loop:
+
+| Field               | Default     | Notes                                                        |
+| ------------------- | ----------- | ------------------------------------------------------------ |
+| `review_state`      | required    | Active state where the reviewer runs.                        |
+| `rework_state`      | required    | Active state an issue returns to when changes are requested. |
+| `needs_human_state` | required    | State used when the loop gives up; need not be active.       |
+| `max_rounds`        | `3`         | Positive integer; review rounds before escalating.           |
+| `max_continuations` | `2`         | Non-negative integer; continuation turns per round.          |
+| `label_prefix`      | `symphony:` | Prefix for labels the review loop applies.                   |
+
+For Claude runtimes, the worker writes the last turn's final `result` text,
+truncated to 64KB, to `<runtime dir>/final-message.txt` so the host can read
+the reviewer's verdict. Nothing is written when the turn produced no result.
+
 ## WORKFLOW.md Front-matter Validation
 
 `gh-symphony workflow validate` and `gh-symphony doctor` use the same
@@ -529,14 +565,15 @@ contract. The CLI also uses them during setup and doctor checks where
 applicable; provider credentials are not part of the general child environment
 allowlist.
 
-| Variable            | Default | Read by                                    | Audience             | Notes                                                                                                                                    |
-| ------------------- | ------- | ------------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`    | unset   | Codex runtime                              | User-facing          | Direct Codex/OpenAI credential.                                                                                                          |
-| `OPENAI_BASE_URL`   | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI-compatible endpoint override passed to Codex.                                                                            |
-| `OPENAI_ORG_ID`     | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI organization value passed to Codex.                                                                                      |
-| `OPENAI_PROJECT`    | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI project value passed to Codex.                                                                                           |
-| `ANTHROPIC_API_KEY` | unset   | CLI setup/doctor, Claude preflight/runtime | User-facing          | Direct Claude credential. Required for bare Claude runtimes.                                                                             |
-| `CODEX_HOME`        | unset   | Codex runtime launcher                     | User-facing/advanced | Host-side source for Codex `auth.json`. The child always receives a workspace-contained `CODEX_HOME`; host configuration is not exposed. |
+| Variable                  | Default | Read by                                    | Audience             | Notes                                                                                                                                    |
+| ------------------------- | ------- | ------------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`          | unset   | Codex runtime                              | User-facing          | Direct Codex/OpenAI credential.                                                                                                          |
+| `OPENAI_BASE_URL`         | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI-compatible endpoint override passed to Codex.                                                                            |
+| `OPENAI_ORG_ID`           | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI organization value passed to Codex.                                                                                      |
+| `OPENAI_PROJECT`          | unset   | Codex runtime                              | User-facing/advanced | Optional OpenAI project value passed to Codex.                                                                                           |
+| `ANTHROPIC_API_KEY`       | unset   | CLI setup/doctor, Claude preflight/runtime | User-facing          | Direct Claude credential. Required for bare Claude runtimes.                                                                             |
+| `CLAUDE_CODE_OAUTH_TOKEN` | unset   | Claude preflight/runtime                   | User-facing          | Long-lived Claude subscription token from `claude setup-token`. Forwarded to the child env; no credentials file is staged.               |
+| `CODEX_HOME`              | unset   | Codex runtime launcher                     | User-facing/advanced | Host-side source for Codex `auth.json`. The child always receives a workspace-contained `CODEX_HOME`; host configuration is not exposed. |
 
 When a direct provider API key is absent, the non-bare Codex and Claude
 runtimes copy only the provider login needed by the selected agent into a
@@ -551,6 +588,13 @@ that private directory. Symphony never copies the operator's Docker
 `DOCKER_CONFIG` is runtime-managed rather than inherited from operator input.
 When the host has no CLI plugin directory, nothing is staged and Docker
 availability remains unchanged.
+
+For the non-bare Claude runtime, preflight accepts `ANTHROPIC_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN`, or a readable `~/.claude/.credentials.json`, in that
+order, and fails with a remediation hint when none is present. Prefer
+`CLAUDE_CODE_OAUTH_TOKEN` for headless hosts: run `claude setup-token` once and
+export the token; the worker passes it to the agent child and skips staging the
+local login file.
 
 ### Custom Runtime Authentication And Compatibility
 

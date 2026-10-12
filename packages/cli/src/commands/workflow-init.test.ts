@@ -424,6 +424,12 @@ describe("init priority field detection", () => {
     await writeFile(gh, "#!/bin/sh\nexit 0\n", "utf8");
     await chmod(gh, 0o755);
     process.env.PATH = `${binDir}${process.platform === "win32" ? ";" : ":"}${originalPath ?? ""}`;
+    const home = join(configDir, "home");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(join(home, ".claude", ".credentials.json"), "{}", "utf8");
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+    vi.stubEnv("CLAUDE_CODE_OAUTH_TOKEN", undefined);
 
     vi.spyOn(ghAuth, "getGhTokenWithSource").mockReturnValue({
       token: "test-token",
@@ -470,7 +476,7 @@ describe("init priority field detection", () => {
 
     expect(process.exitCode).toBeUndefined();
     expect(p.log.info).toHaveBeenCalledWith(
-      expect.stringContaining("WARN Claude authentication")
+      expect.stringContaining("PASS Claude authentication")
     );
     expect(p.log.info).toHaveBeenCalledWith(
       expect.stringContaining("Claude Code local login")

@@ -9,6 +9,7 @@ import {
   WorkflowValidationError,
 } from "./workflow/parser.js";
 import { isStateActive } from "./workflow/lifecycle.js";
+import { resolveWorkflowForState } from "./workflow/config.js";
 import { AGENT_CHILD_CREDENTIAL_ENVIRONMENT_NAMES } from "./runtime/custom-child-env.js";
 import {
   resolveWorkflowRuntimeCommand,
@@ -1356,6 +1357,76 @@ Prompt body.
       }
     }
   );
+
+  describe("runtime_by_state and review", () => {
+    const front = (extra: string) => `---
+tracker:
+  kind: github-project
+  active_states:
+    - Ready
+    - In progress
+    - In code review
+runtime:
+  kind: codex-app-server
+agent:
+  max_turns: 20
+${extra}
+---
+Prompt body.
+`;
+    const routed = front(`runtime_by_state:
+  In code review:
+    kind: claude-print
+    max_turns: 4
+review:
+  review_state: In code review
+  rework_state: In progress
+  needs_human_state: Needs human`);
+
+    it("parses per-state runtime overrides and review defaults", () => {
+      const workflow = parseWorkflowMarkdown(routed);
+      expect(workflow.runtimeByState?.["in code review"]).toMatchObject({
+        runtime: { kind: "claude-print", command: "claude" },
+        maxTurns: 4,
+      });
+      expect(workflow.review).toEqual({
+        reviewState: "In code review",
+        reworkState: "In progress",
+        needsHumanState: "Needs human",
+        maxRounds: 3,
+        maxContinuations: 2,
+        labelPrefix: "symphony:",
+      });
+      expect(parseWorkflowMarkdown(front("")).review).toBeNull();
+    });
+
+    it("rejects runtime_by_state keys that are not active states", () => {
+      expect(() =>
+        parseWorkflowMarkdown(
+          front(`runtime_by_state:
+  Needs human:
+    kind: claude-print`)
+        )
+      ).toThrow(/runtime_by_state.Needs human" must name an active state/);
+    });
+
+    it.each([
+      ["In code review", "claude-print", 4, "claude"],
+      ["  in CODE review ", "claude-print", 4, "claude"],
+      ["In progress", "codex-app-server", 20, "codex app-server"],
+      [null, "codex-app-server", 20, "codex app-server"],
+    ])(
+      "resolveWorkflowForState(%j) -> %s",
+      (state, kind, maxTurns, agentCommand) => {
+        const workflow = parseWorkflowMarkdown(routed);
+        const resolved = resolveWorkflowForState(workflow, state);
+        expect(resolved.runtime?.kind).toBe(kind);
+        expect(resolved.agent.maxTurns).toBe(maxTurns);
+        expect(resolved.agentCommand).toBe(agentCommand);
+        if (kind === "codex-app-server") expect(resolved).toBe(workflow);
+      }
+    );
+  });
 
   it("parses runtime-only claude-print front matter", () => {
     const workflow = parseWorkflowMarkdown(`---

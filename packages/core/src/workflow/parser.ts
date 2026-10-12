@@ -18,6 +18,11 @@ import {
   type WorkflowCodexConfig,
   type WorkflowPriorityConfig,
   type WorkflowRuntimeConfig,
+  type WorkflowReviewConfig,
+  type WorkflowStateRuntimeConfig,
+  DEFAULT_REVIEW_LABEL_PREFIX,
+  DEFAULT_REVIEW_MAX_CONTINUATIONS,
+  DEFAULT_REVIEW_MAX_ROUNDS,
   type WorkflowRuntimeKind,
   resolveWorkflowRuntimeCommand,
   isWorkflowRuntimeKind,
@@ -27,6 +32,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   DEFAULT_WORKFLOW_LIFECYCLE,
+  matchesWorkflowState,
   normalizeWorkflowState,
   type WorkflowLifecycleConfig,
 } from "./lifecycle.js";
@@ -316,6 +322,14 @@ function parseWorkflowConfig(
     runtime,
     codex: codexConfig,
   });
+  const runtimeByState = parseRuntimeByState(
+    readObject(frontMatter, "runtime_by_state"),
+    activeStates,
+    codexConfig,
+    env,
+    options
+  );
+  const review = parseReviewConfig(frontMatter, activeStates);
 
   const parsed: ParsedWorkflow = {
     promptTemplate,
@@ -402,6 +416,8 @@ function parseWorkflowConfig(
         ) ?? DEFAULT_BASE_DELAY_MS,
     },
     runtime,
+    runtimeByState,
+    review,
     codex: codexConfig,
     lifecycle: {
       stateFieldName,
@@ -1154,6 +1170,87 @@ function parseRuntimeConfig(
       stallTimeoutMs:
         stallTimeoutMs === null ? "codex/defaults" : "runtime.timeouts",
     },
+  };
+}
+
+function parseRuntimeByState(
+  input: Record<string, WorkflowFrontMatterNode>,
+  activeStates: readonly string[],
+  codex: WorkflowCodexConfig,
+  env: NodeJS.ProcessEnv,
+  options: ParseWorkflowOptions
+): Record<string, WorkflowStateRuntimeConfig> {
+  const result: Record<string, WorkflowStateRuntimeConfig> = {};
+  for (const state of Object.keys(input)) {
+    const path = formatWorkflowMapEntryPath("runtime_by_state", state);
+    if (!matchesWorkflowState(state, activeStates)) {
+      throw new WorkflowValidationError(
+        "workflow_validation_error",
+        path,
+        `Workflow front matter field "${path}" must name an active state (${activeStates.join(", ")}).`
+      );
+    }
+    const entry = readObject(input, state, path);
+    result[normalizeWorkflowState(state)] = {
+      runtime: parseRuntimeConfig(entry, codex, env, options),
+      maxTurns: readOptionalPositiveInteger(
+        entry,
+        "max_turns",
+        `${path}.max_turns`
+      ),
+    };
+  }
+  return result;
+}
+
+function parseReviewConfig(
+  frontMatter: Record<string, WorkflowFrontMatterNode>,
+  activeStates: readonly string[]
+): WorkflowReviewConfig | null {
+  if (frontMatter.review === undefined || frontMatter.review === null) {
+    return null;
+  }
+  const review = readObject(frontMatter, "review");
+  const readActiveState = (key: string): string => {
+    const path = `review.${key}`;
+    const state = readRequiredString(review, key, path);
+    if (!matchesWorkflowState(state, activeStates)) {
+      throw new WorkflowValidationError(
+        "workflow_validation_error",
+        path,
+        `Workflow front matter field "${path}" must name an active state (${activeStates.join(", ")}).`
+      );
+    }
+    return state;
+  };
+  const maxContinuations =
+    readOptionalIntegerLike(
+      review,
+      "max_continuations",
+      "review.max_continuations"
+    ) ?? DEFAULT_REVIEW_MAX_CONTINUATIONS;
+  if (maxContinuations < 0) {
+    throw new WorkflowValidationError(
+      "workflow_validation_error",
+      "review.max_continuations",
+      'Workflow front matter field "review.max_continuations" must be a non-negative integer.'
+    );
+  }
+  return {
+    reviewState: readActiveState("review_state"),
+    reworkState: readActiveState("rework_state"),
+    needsHumanState: readRequiredString(
+      review,
+      "needs_human_state",
+      "review.needs_human_state"
+    ),
+    maxRounds:
+      readOptionalPositiveInteger(review, "max_rounds", "review.max_rounds") ??
+      DEFAULT_REVIEW_MAX_ROUNDS,
+    maxContinuations,
+    labelPrefix:
+      readOptionalString(review, "label_prefix", "review.label_prefix") ??
+      DEFAULT_REVIEW_LABEL_PREFIX,
   };
 }
 

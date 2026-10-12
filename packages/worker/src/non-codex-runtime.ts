@@ -4,6 +4,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 import { finished } from "node:stream/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AgentRuntimeAdapter,
@@ -274,4 +275,39 @@ function waitForChildExit(
     child.once("exit", settle);
     child.once("error", () => settle(1, null));
   });
+}
+
+export const FINAL_MESSAGE_FILE_NAME = "final-message.txt";
+export const FINAL_MESSAGE_MAX_BYTES = 64 * 1024;
+
+/** Returns the text of the last stream `result` record of a Claude turn. */
+export function extractFinalResultText(
+  result: WorkerNonCodexTurnResult
+): string | null {
+  if (!("records" in result)) {
+    return null;
+  }
+  for (let index = result.records.length - 1; index >= 0; index -= 1) {
+    const message = result.records[index]?.message;
+    if (message?.type === "result" && typeof message.result === "string") {
+      return message.result;
+    }
+  }
+  return null;
+}
+
+/**
+ * Persists the last turn's final result text (truncated to 64KB) to
+ * `<runtimeDir>/final-message.txt` for host-side consumers such as review.
+ */
+export async function writeFinalMessage(
+  runtimeDir: string | undefined,
+  result: WorkerNonCodexTurnResult
+): Promise<void> {
+  const text = extractFinalResultText(result);
+  if (!runtimeDir || text === null) {
+    return;
+  }
+  const bytes = Buffer.from(text, "utf8").subarray(0, FINAL_MESSAGE_MAX_BYTES);
+  await writeFile(join(runtimeDir, FINAL_MESSAGE_FILE_NAME), bytes);
 }

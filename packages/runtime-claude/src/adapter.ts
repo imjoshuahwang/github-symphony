@@ -456,7 +456,9 @@ export class ClaudePrintRuntimeAdapter implements AgentRuntimeAdapter<
     });
     if (
       this.config.isolation?.bare === true ||
-      this.config.env?.ANTHROPIC_API_KEY
+      this.config.env?.ANTHROPIC_API_KEY ||
+      // A long-lived OAuth token travels via the child env; no file staging.
+      this.config.env?.CLAUDE_CODE_OAUTH_TOKEN
     ) {
       return;
     }
