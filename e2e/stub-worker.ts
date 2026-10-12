@@ -569,11 +569,7 @@ async function run() {
   }
 
   if (process.env.STUB_EXPECT_OTLP_ISOLATION === "1") {
-    for (const name of [
-      "E2E_PROJECT_EXPORT_AUTH",
-      "E2E_PROCESS_EXPORT_AUTH",
-      "OTEL_EXPORTER_OTLP_HEADERS",
-    ]) {
+    for (const name of ["OTEL_EXPORTER_OTLP_HEADERS"]) {
       if (process.env[name] !== undefined)
         throw new Error(`exporter_credential_leaked:${name}`);
     }

@@ -35,9 +35,6 @@ COPY --from=build --chown=node:node /app/e2e-compiled/stub-worker.js /app/e2e/st
 COPY --from=build --chown=node:node /app/e2e/host-dynamic-tool-e2e.mjs /app/e2e/host-dynamic-tool-e2e.mjs
 COPY --from=build --chown=node:node /app/e2e/expected-target-stop.mjs /app/e2e/expected-target-stop.mjs
 
-# OTLP lifecycle contract uses built service/providers, not Vitest mocks.
-COPY --from=build --chown=node:node /app/e2e/otlp-lifecycle-contract.mjs /app/e2e/otlp-lifecycle-contract.mjs
-
 # Copy seed data
 COPY --chown=node:node e2e/seed /e2e/seed
 

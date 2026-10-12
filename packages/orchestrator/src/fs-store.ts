@@ -9,7 +9,6 @@ import {
   type IssueWorkspaceRecord,
   type IssueStatusEvent,
   type OrchestratorEvent,
-  type ObservabilityPublication,
   type OrchestratorRunRecord,
   type OrchestratorRunQuery,
   type OrchestratorStateStore,
@@ -21,7 +20,6 @@ import {
   readJsonFile as readCoreJsonFile,
   safeReadDir,
 } from "@gh-symphony/core";
-import { freezeEvent, offerBestEffort } from "./publication.js";
 import { appendFileDurably, writeFileAtomically } from "./durable-file.js";
 
 const PROJECTS_DIR = "projects";
@@ -32,7 +30,7 @@ const runRecordReadObserver = new AsyncLocalStorage<
 >();
 
 // Every run.json read in this module must route through this wrapper. The
-// history benchmark's file-boundary read accounting depends on that invariant.
+// Tests observe run.json reads through this seam (project scoping, concurrency).
 async function readJsonFile<T>(path: string): Promise<T | null> {
   if (basename(path) === "run.json") {
     await runRecordReadObserver.getStore()?.(path);
@@ -48,7 +46,6 @@ export async function observeRunRecordReads<T>(
 }
 
 export class OrchestratorFsStore implements OrchestratorStateStore {
-  private publication: Pick<ObservabilityPublication, "offerEvent">;
   private readonly resolvedRuntimeRoot: string;
   private readonly resolvedEventsMirrorRoot: string | null;
 
@@ -56,27 +53,12 @@ export class OrchestratorFsStore implements OrchestratorStateStore {
     readonly runtimeRoot: string,
     options: {
       eventsMirrorRoot?: string;
-      publication?: Pick<ObservabilityPublication, "offerEvent">;
     } = {}
   ) {
-    this.publication = options.publication ?? {};
     this.resolvedRuntimeRoot = resolve(runtimeRoot);
     this.resolvedEventsMirrorRoot = options.eventsMirrorRoot
       ? resolve(options.eventsMirrorRoot)
       : null;
-  }
-
-  /** Owner-local wiring, installed before dispatch; no core store contract. */
-  setEventPublication(
-    publication: Pick<ObservabilityPublication, "offerEvent">
-  ): void {
-    const prior = this.publication;
-    this.publication = {
-      offerEvent: (event, context) => {
-        offerBestEffort(() => prior.offerEvent?.(event, context));
-        offerBestEffort(() => publication.offerEvent?.(event, context));
-      },
-    };
   }
 
   projectDir(projectId?: string): string {
@@ -357,19 +339,6 @@ export class OrchestratorFsStore implements OrchestratorStateStore {
           }`
         );
       }
-    }
-    if (this.publication.offerEvent) {
-      offerBestEffort(() =>
-        this.publication.offerEvent!(
-          freezeEvent(redactedEvent),
-          Object.freeze({
-            observedAt: new Date().toISOString(),
-            projectId: resolvedProjectId,
-            runId,
-            integrity,
-          })
-        )
-      );
     }
   }
 
