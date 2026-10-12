@@ -744,7 +744,7 @@ lines.on("line", (line) => {
     );
   });
 
-  it("OT-08/OT-09: starts with unresolved OTLP references and emits measured session deltas", async () => {
+  it("OT-08: emits measured session deltas without forwarding OTEL_ env", async () => {
     const root = await mkdtemp(join(tmpdir(), "worker-otlp-provenance-"));
     createdRoots.push(root);
     const workspace = join(root, "workspace");
@@ -789,12 +789,6 @@ tracker:
 runtime:
   kind: codex-app-server
   command: codex app-server
-observability:
-  otlp:
-    enabled: true
-    endpoint: env:OTLP_MISSING_ENDPOINT
-    headers:
-      Authorization: env:OTLP_MISSING_AUTH
 ---
 Worker prompt.
 `

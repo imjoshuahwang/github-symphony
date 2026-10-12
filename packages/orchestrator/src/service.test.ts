@@ -4682,178 +4682,6 @@ Retry inconclusive work.
     expect(isProcessRunning).toHaveBeenCalledWith(4102);
   });
 
-  it("OT-04/12 offers committed projections with monotonic identity and isolates callback errors", async () => {
-    process.env.GITHUB_GRAPHQL_TOKEN = "test-token";
-    const tempRoot = await mkdtemp(join(tmpdir(), "orchestrator-offer-"));
-    try {
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform"
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const config = createProjectConfig(tempRoot, repository);
-      const commits: unknown[] = [];
-      const save = store.saveProjectStatus.bind(store);
-      vi.spyOn(store, "saveProjectStatus").mockImplementation(
-        async (snapshot) => {
-          await save(snapshot);
-          commits.push(snapshot);
-        }
-      );
-      const offers: import("@gh-symphony/core").CommittedMetricSnapshot[] = [];
-      const commitsAtOffer: number[] = [];
-      const observeTick = vi.fn(
-        (_measurement: import("@gh-symphony/core").TickMeasurement) => {
-          throw new Error("private exporter failure");
-        }
-      );
-      const onTick = vi.fn(() => {
-        expect(clock).toHaveBeenCalledTimes(2);
-      });
-      const stderr = { write: vi.fn() };
-      const clock = vi
-        .fn()
-        .mockReturnValueOnce(100)
-        .mockReturnValueOnce(350)
-        .mockReturnValueOnce(400)
-        .mockReturnValueOnce(900);
-      const service = new OrchestratorService(store, config, {
-        fetchImpl: vi.fn().mockResolvedValue(createEmptyTrackerResponse()),
-        now: () => new Date("2026-03-08T00:00:00.000Z"),
-        monotonicNow: clock,
-        stderr,
-        onTick,
-        publication: {
-          offerSnapshot: (snapshot) => {
-            commitsAtOffer.push(commits.length);
-            offers.push(snapshot);
-            throw new Error("private exporter failure");
-          },
-          observeTick,
-        },
-      });
-      await service.run({ once: true });
-      await service.runOnce();
-      expect(commitsAtOffer).toEqual([1, 2]);
-      expect(Object.isFrozen(offers[0])).toBe(true);
-      expect(Object.isFrozen(offers[0].projection.tickOutcomes)).toBe(true);
-      expect(offers.map((o) => o.sequence)).toEqual([1, 2]);
-      expect(offers[0].instanceId).toBe(offers[1].instanceId);
-      expect(offers[0].projection.sourceTime).toBe(
-        offers[1].projection.sourceTime
-      );
-      expect(offers[0].projection).toMatchObject({
-        activeRuns: 0,
-        tokenTotals: null,
-      });
-      expect(onTick).toHaveBeenCalledOnce();
-      expect(observeTick.mock.calls).toEqual([
-        [{ durationSeconds: 0.25, outcome: "success" }],
-        [{ durationSeconds: 0.5, outcome: "success" }],
-      ]);
-      expect(
-        (await store.loadProjectStatus(config.projectId))?.lastError
-      ).toBeNull();
-      expect(stderr.write).not.toHaveBeenCalled();
-      const count = offers.length;
-      await service.status();
-      expect(offers).toHaveLength(count);
-    } finally {
-      await rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("completes ticks without awaiting pending or rejecting snapshot and timer callbacks", async () => {
-    process.env.GITHUB_GRAPHQL_TOKEN = "test-token";
-    const tempRoot = await mkdtemp(
-      join(tmpdir(), "orchestrator-offer-pending-")
-    );
-    try {
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform"
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const offerSnapshot = vi
-        .fn()
-        .mockReturnValueOnce(new Promise<void>(() => {}))
-        .mockRejectedValueOnce(new Error("private exporter failure"));
-      const observeTick = vi
-        .fn()
-        .mockReturnValueOnce(new Promise<void>(() => {}))
-        .mockRejectedValueOnce(new Error("private exporter failure"));
-      const service = new OrchestratorService(
-        store,
-        createProjectConfig(tempRoot, repository),
-        {
-          fetchImpl: vi.fn().mockResolvedValue(createEmptyTrackerResponse()),
-          publication: { offerSnapshot, observeTick },
-        }
-      );
-      await expect(service.runOnce()).resolves.toMatchObject({
-        health: "idle",
-        lastError: null,
-      });
-      await expect(service.runOnce()).resolves.toMatchObject({
-        health: "idle",
-        lastError: null,
-      });
-      await Promise.resolve();
-      expect(offerSnapshot).toHaveBeenCalledTimes(2);
-      expect(observeTick).toHaveBeenCalledTimes(2);
-    } finally {
-      await rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("does not publish a failed status commit and measures failed ticks without masking persistence errors", async () => {
-    process.env.GITHUB_GRAPHQL_TOKEN = "test-token";
-    const tempRoot = await mkdtemp(join(tmpdir(), "orchestrator-offer-fail-"));
-    try {
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform"
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const save = vi
-        .spyOn(store, "saveProjectStatus")
-        .mockRejectedValueOnce(new Error("commit failed"));
-      const offerSnapshot = vi.fn();
-      const observeTick = vi.fn();
-      const clock = vi
-        .fn()
-        .mockReturnValueOnce(10)
-        .mockReturnValueOnce(1010)
-        .mockReturnValueOnce(2000)
-        .mockReturnValueOnce(2100);
-      const service = new OrchestratorService(
-        store,
-        createProjectConfig(tempRoot, repository),
-        {
-          fetchImpl: vi.fn().mockResolvedValue(createEmptyTrackerResponse()),
-          monotonicNow: clock,
-          publication: { offerSnapshot, observeTick },
-        }
-      );
-      await expect(service.runOnce()).rejects.toThrow("commit failed");
-      expect(offerSnapshot).not.toHaveBeenCalled();
-      expect(observeTick).toHaveBeenCalledWith({
-        durationSeconds: 1,
-        outcome: "failure",
-      });
-      save.mockRestore();
-      await service.runOnce();
-      expect(offerSnapshot).toHaveBeenCalledWith(
-        expect.objectContaining({ sequence: 1 })
-      );
-    } finally {
-      await rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
   it.each([
     "heartbeat",
     "codex_update",
@@ -11027,9 +10855,7 @@ Prefer focused changes.
       service as never,
       "loadProjectWorkflow"
     );
-    // Startup now reads the immutable exporter policy before reconciliation.
     loadProjectWorkflowSpy
-      .mockImplementationOnce(originalLoadProjectWorkflow as never)
       .mockRejectedValueOnce(new Error("workflow unavailable"))
       .mockImplementation(originalLoadProjectWorkflow as never);
 
@@ -18031,190 +17857,7 @@ Prefer focused changes.
     }
   });
 
-  it.each(["shared-name", "missing-endpoint"])(
-    "OT-09 preserves LKG across exporter %s reload faults",
-    async (fault) => {
-      process.env.GITHUB_GRAPHQL_TOKEN = "tracker-token";
-      const tempRoot = await mkdtemp(join(tmpdir(), "orchestrator-otlp-lkg-"));
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform"
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const projectConfig = createProjectConfig(tempRoot, repository);
-      const stderr = { write: vi.fn() };
-      const service = new OrchestratorService(store, projectConfig, { stderr });
-      const loader = service as unknown as {
-        loadProjectWorkflow: (
-          project: typeof projectConfig,
-          repo: RepositoryRef
-        ) => Promise<WorkflowResolution>;
-      };
-      const original = await loader.loadProjectWorkflow(
-        projectConfig,
-        repository
-      );
-      expect(original.isValid).toBe(true);
-      await commitWorkflowFixture(repository.path, {
-        rawWorkflow: `---
-tracker:
-  kind: github-project
-  provider:
-    project_id: project-123
-    state_field: Status
-observability:
-  otlp:
-    enabled: ${fault === "missing-endpoint"}
-    endpoint: $ABSENT_EXPORT_ENDPOINT_991
-    headers:
-      Authorization: $${fault === "shared-name" ? "ANTHROPIC_API_KEY" : "ABSENT_EXPORT_AUTH_991"}
----
-Invalid exporter policy`,
-      });
-      const invalid = await loader.loadProjectWorkflow(
-        projectConfig,
-        repository
-      );
-      expect(invalid).toMatchObject({
-        isValid: false,
-        usedLastKnownGood: true,
-        workflow: original.workflow,
-      });
-      expect(invalid.validationError).toContain(
-        fault === "shared-name"
-          ? "distinct exporter credential name"
-          : "ABSENT_EXPORT_ENDPOINT_991"
-      );
-      expect(await readFile(invalid.workflowPath!, "utf8")).not.toContain(
-        "Invalid exporter policy"
-      );
-      await commitWorkflowFixture(repository.path, {
-        rawWorkflow: "---\ninvalid: [\n---\n",
-      });
-      const fallback = await loader.loadProjectWorkflow(
-        projectConfig,
-        repository
-      );
-      expect(fallback.workflow).toEqual(original.workflow);
-      expect(await readFile(fallback.workflowPath!, "utf8")).not.toContain(
-        "Invalid exporter policy"
-      );
-      expect(stderr.write).toHaveBeenCalledWith(
-        expect.stringContaining("failed to reload WORKFLOW.md")
-      );
-    }
-  );
-
-  it.each(["shared-name", "missing-endpoint"])(
-    "OT-09 reconciles later due retries after exporter %s faults",
-    async (fault) => {
-      process.env.GITHUB_GRAPHQL_TOKEN = "tracker-token";
-      const tempRoot = await mkdtemp(
-        join(tmpdir(), "orchestrator-otlp-retry-")
-      );
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform",
-        {
-          rawWorkflow: `---
-tracker:
-  kind: github-project
-  provider:
-    project_id: project-123
-    state_field: Status
-observability:
-  otlp:
-    enabled: ${fault === "missing-endpoint"}
-    endpoint: $ABSENT_EXPORT_ENDPOINT_991
-    headers:
-      Authorization: $${fault === "shared-name" ? "ANTHROPIC_API_KEY" : "ABSENT_EXPORT_AUTH_991"}
----
-Prompt`,
-        }
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const projectConfig = createProjectConfig(tempRoot, repository);
-      await store.saveProjectConfig(projectConfig);
-      const now = new Date("2026-03-08T00:01:00.000Z");
-      const runs = [1, 2].map(
-        (number): OrchestratorRunRecord => ({
-          runId: `run-${number}`,
-          projectId: projectConfig.projectId,
-          projectSlug: projectConfig.projectId,
-          issueId: `issue-${number}`,
-          issueSubjectId: `issue-${number}`,
-          issueIdentifier: `acme/platform#${number}`,
-          issueState: "Todo",
-          repository,
-          status: "retrying",
-          attempt: 2,
-          processId: null,
-          port: null,
-          workingDirectory: join(tempRoot, `run-${number}`),
-          issueWorkspaceKey: `acme_platform_${number}`,
-          workspaceRuntimeDir: join(tempRoot, `run-${number}`, ".runtime"),
-          workflowPath: null,
-          retryKind: "failure",
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-          startedAt: null,
-          completedAt: now.toISOString(),
-          lastError: "retry failed",
-          nextRetryAt: `2026-03-08T00:00:0${number}.000Z`,
-        })
-      );
-      for (const run of runs) await store.saveRun(run);
-      await store.saveProjectIssueOrchestrations(
-        projectConfig.projectId,
-        runs.map((run) => ({
-          issueId: run.issueId,
-          identifier: run.issueIdentifier,
-          workspaceKey: run.issueWorkspaceKey!,
-          completedOnce: false,
-          failureRetryCount: 1,
-          state: "retry_queued" as const,
-          currentRunId: run.runId,
-          retryEntry: {
-            attempt: 2,
-            dueAt: run.nextRetryAt!,
-            error: run.lastError!,
-          },
-          updatedAt: now.toISOString(),
-        }))
-      );
-      const spawnImpl = vi.fn();
-      const stderr = { write: vi.fn() };
-      const service = new OrchestratorService(store, projectConfig, {
-        fetchImpl: vi.fn().mockResolvedValue(createEmptyTrackerResponse()),
-        spawnImpl: spawnImpl as never,
-        stderr,
-        now: () => now,
-      });
-      await service.runOnce();
-      // Both due retries must be postponed through their normal reconcile path.
-      for (const run of runs) {
-        expect(await store.loadRun(run.runId)).toMatchObject({
-          status: "retrying",
-          nextRetryAt: expect.not.stringMatching(run.nextRetryAt!),
-          lastError: expect.stringContaining(
-            "retry refresh failed: workflow policy unavailable"
-          ),
-        });
-      }
-      expect(spawnImpl).not.toHaveBeenCalled();
-      expect(stderr.write).toHaveBeenCalledWith(
-        expect.stringContaining(
-          fault === "shared-name"
-            ? "distinct exporter credential name"
-            : "ABSENT_EXPORT_ENDPOINT_991"
-        )
-      );
-    }
-  );
-
-  it("OT-09 strips exporter credentials at the final hook boundary", async () => {
+  it("strips OTLP exporter credentials at the final hook boundary", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "orchestrator-otlp-hook-"));
     const repository = await createRepositoryFixture(
       tempRoot,
@@ -18226,17 +17869,12 @@ Prompt`,
     await store.saveProjectConfig(projectConfig);
     await writeFile(
       join(store.projectDir(projectConfig.projectId), ".env"),
-      "PROJECT_EXPORT_AUTH=secret\nOTEL_EXPORTER_OTLP_HEADERS=x=secret\nSYMPHONY_ALLOW_WORKFLOW_HOOKS=1\n"
+      "OTEL_EXPORTER_OTLP_HEADERS=x=secret\nSYMPHONY_ALLOW_WORKFLOW_HOOKS=1\n"
     );
     const workflow = coreModule.parseWorkflowMarkdown(
       `---
 hooks:
   before_run: hook.sh
-observability:
-  otlp:
-    enabled: false
-    headers:
-      Authorization: $PROJECT_EXPORT_AUTH
 ---
 Prompt`,
       {}
@@ -18288,111 +17926,12 @@ Prompt`,
     }
   });
 
-  it.each([false, true])(
-    "OT-09 rejects shared auth visibly before resolution, enabled=%s",
-    async (enabled) => {
-      process.env.GITHUB_GRAPHQL_TOKEN = "tracker-token";
-      const tempRoot = await mkdtemp(
-        join(tmpdir(), "orchestrator-otlp-conflict-")
-      );
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform",
-        {
-          rawWorkflow: `---
-tracker:
-  kind: github-project
-  provider:
-    project_id: project-123
-    state_field: Status
-  active_states: [Todo]
-observability:
-  otlp:
-    enabled: ${enabled}
-    endpoint: $MISSING_ENDPOINT
-    headers:
-      Authorization: $ANTHROPIC_API_KEY
----
-Prompt`,
-        }
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const projectConfig = createProjectConfig(tempRoot, repository);
-      await store.saveProjectConfig(projectConfig);
-      const spawnImpl = vi.fn();
-      const stderr = { write: vi.fn() };
-      const service = new OrchestratorService(store, projectConfig, {
-        spawnImpl: spawnImpl as never,
-        stderr,
-      });
-      await service.runOnce();
-      expect(spawnImpl).not.toHaveBeenCalled();
-      const status = await store.loadProjectStatus(projectConfig.projectId);
-      expect(status?.lastError).toContain(
-        "use a distinct exporter credential name"
-      );
-      expect(status?.lastError).not.toContain("MISSING_ENDPOINT");
-    }
-  );
-
-  it.each([false, true])(
-    "OT-09 resolves exporter values only in the enabled owner, enabled=%s",
-    async (enabled) => {
-      process.env.GITHUB_GRAPHQL_TOKEN = "tracker-token";
-      const tempRoot = await mkdtemp(
-        join(tmpdir(), "orchestrator-otlp-owner-")
-      );
-      const repository = await createRepositoryFixture(
-        tempRoot,
-        "acme",
-        "platform",
-        {
-          rawWorkflow: `---
-tracker:
-  kind: github-project
-  provider:
-    project_id: project-123
-    state_field: Status
-  active_states: [Todo]
-hooks:
-  after_create: hooks/after_create.sh
-observability:
-  otlp:
-    enabled: ${enabled}
-    endpoint: $ABSENT_EXPORT_ENDPOINT_991
-    headers:
-      Authorization: $ABSENT_EXPORT_AUTH_991
----
-Prompt`,
-        }
-      );
-      const store = new OrchestratorFsStore(tempRoot);
-      const projectConfig = createProjectConfig(tempRoot, repository);
-      await store.saveProjectConfig(projectConfig);
-      const spawnImpl = vi.fn().mockReturnValue({ pid: 4306, unref: vi.fn() });
-      const service = new OrchestratorService(store, projectConfig, {
-        spawnImpl: spawnImpl as never,
-        fetchImpl: vi.fn().mockResolvedValue(createTrackerResponse(repository)),
-      });
-      await service.runOnce();
-      const status = await store.loadProjectStatus(projectConfig.projectId);
-      if (enabled) {
-        expect(spawnImpl).not.toHaveBeenCalled();
-        expect(status?.lastError).toContain("ABSENT_EXPORT_ENDPOINT_991");
-      } else {
-        expect(spawnImpl).toHaveBeenCalledTimes(1);
-        expect(status?.lastError).toBeNull();
-      }
-    }
-  );
-
   it.each(["codex-app-server", "claude-print", "custom"])(
-    "OT-09 starts %s workers with exporter credentials stripped",
+    "starts %s workers with OTLP exporter credentials stripped",
     async (kind) => {
       process.env.GITHUB_GRAPHQL_TOKEN = "tracker-token";
-      const previous = process.env.PROCESS_EXPORT_AUTH;
-      process.env.PROCESS_EXPORT_AUTH = "process-export-secret";
+      const previous = process.env.OTEL_EXPORTER_OTLP_METRICS_HEADERS;
+      process.env.OTEL_EXPORTER_OTLP_METRICS_HEADERS = "x=process-secret";
       try {
         const tempRoot = await mkdtemp(join(tmpdir(), "orchestrator-otlp-"));
         const repository = await createRepositoryFixture(
@@ -18415,13 +17954,6 @@ runtime:
   command: ${kind === "codex-app-server" ? "codex app-server" : "agent"}
   auth:
     env: AGENT_AUTH
-observability:
-  otlp:
-    enabled: true
-    endpoint: $EXPORT_ENDPOINT
-    headers:
-      Authorization: $PROJECT_EXPORT_AUTH
-      X-Process: $PROCESS_EXPORT_AUTH
 ---
 Prompt`,
           }
@@ -18431,16 +17963,12 @@ Prompt`,
         await store.saveProjectConfig(projectConfig);
         await writeFile(
           join(store.projectDir(projectConfig.projectId), ".env"),
-          "PROJECT_EXPORT_AUTH=project-export-secret\nEXPORT_ENDPOINT=http://localhost:4318\nOTEL_EXPORTER_OTLP_HEADERS=x=reserved-secret\nAGENT_AUTH=agent-secret\nANTHROPIC_API_KEY=claude-secret\nOPENAI_API_KEY=codex-secret\n"
+          "OTEL_EXPORTER_OTLP_HEADERS=x=reserved-secret\nAGENT_AUTH=agent-secret\nANTHROPIC_API_KEY=claude-secret\nOPENAI_API_KEY=codex-secret\n"
         );
         const spawnImpl = vi
           .fn()
           .mockReturnValue({ pid: 4306, unref: vi.fn() });
         const service = new OrchestratorService(store, projectConfig, {
-          // Credential isolation runs with explicit injection; production activation stays gated.
-          telemetry: {
-            createPipeline: async () => ({ shutdown: async () => {} }),
-          },
           fetchImpl: vi
             .fn()
             .mockResolvedValue(createTrackerResponse(repository)),
@@ -18449,8 +17977,7 @@ Prompt`,
         await service.runOnce();
         expect(spawnImpl).toHaveBeenCalledTimes(1);
         const env = spawnImpl.mock.calls[0]?.[2]?.env;
-        expect(env?.PROJECT_EXPORT_AUTH).toBeUndefined();
-        expect(env?.PROCESS_EXPORT_AUTH).toBeUndefined();
+        expect(env?.OTEL_EXPORTER_OTLP_METRICS_HEADERS).toBeUndefined();
         expect(env?.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
         expect(env?.AGENT_AUTH).toBe("agent-secret");
         expect(env?.ANTHROPIC_API_KEY).toBe("claude-secret");
@@ -18462,7 +17989,6 @@ Prompt`,
           await readFile(env.SYMPHONY_WORKFLOW_PATH, "utf8"),
           {}
         );
-        expect(parsed.observability?.otlp?.endpoint).toBe("$EXPORT_ENDPOINT");
         let agentEnv: NodeJS.ProcessEnv | undefined;
         const child = new EventEmitter() as EventEmitter & {
           stdin: PassThrough;
@@ -18496,8 +18022,7 @@ Prompt`,
           await adapter.spawnTurn({ messages: [], prompt: "Prompt" });
         }
         expect(agentEnv).toBeDefined();
-        expect(agentEnv?.PROJECT_EXPORT_AUTH).toBeUndefined();
-        expect(agentEnv?.PROCESS_EXPORT_AUTH).toBeUndefined();
+        expect(agentEnv?.OTEL_EXPORTER_OTLP_METRICS_HEADERS).toBeUndefined();
         expect(agentEnv?.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
         expect(agentEnv?.GITHUB_GRAPHQL_TOKEN).toBeUndefined();
         if (kind === "custom")
@@ -18507,8 +18032,9 @@ Prompt`,
         if (kind === "codex-app-server")
           expect(agentEnv?.OPENAI_API_KEY).toBe("codex-secret");
       } finally {
-        if (previous === undefined) delete process.env.PROCESS_EXPORT_AUTH;
-        else process.env.PROCESS_EXPORT_AUTH = previous;
+        if (previous === undefined)
+          delete process.env.OTEL_EXPORTER_OTLP_METRICS_HEADERS;
+        else process.env.OTEL_EXPORTER_OTLP_METRICS_HEADERS = previous;
       }
     }
   );
