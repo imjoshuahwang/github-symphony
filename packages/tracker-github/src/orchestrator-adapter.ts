@@ -17,10 +17,14 @@ import {
   type GitHubGraphQLInvocation,
 } from "@gh-symphony/tool-github-graphql";
 import {
+  addGithubIssueComment,
   fetchGithubIssueStatesByIds,
   fetchGithubProjectIssueByRepositoryAndNumber,
   fetchGithubProjectIssues,
+  mergeGithubPullRequest,
   requestGithubProjectItemState,
+  setGithubIssueStateLabel,
+  type GitHubIssueTarget,
 } from "./adapter.js";
 
 export const githubProjectTrackerAdapter: OrchestratorTrackerAdapter = {
@@ -321,7 +325,41 @@ export const githubProjectTrackerAdapter: OrchestratorTrackerAdapter = {
       dependencies.fetchImpl
     );
   },
+
+  async addIssueComment(project, issue, body, dependencies = {}) {
+    await addGithubIssueComment(
+      resolveGitHubTrackerConfig(project, dependencies),
+      issueTarget(issue),
+      body,
+      dependencies.fetchImpl
+    );
+  },
+
+  async setStateLabel(project, issue, stateName, dependencies = {}) {
+    await setGithubIssueStateLabel(
+      resolveGitHubTrackerConfig(project, dependencies),
+      issueTarget(issue),
+      stateName,
+      dependencies.fetchImpl
+    );
+  },
+
+  mergePullRequest(project, input, dependencies = {}) {
+    return mergeGithubPullRequest(
+      resolveGitHubTrackerConfig(project, dependencies),
+      input,
+      dependencies.fetchImpl
+    );
+  },
 };
+
+function issueTarget(issue: TrackedIssue): GitHubIssueTarget {
+  return {
+    owner: issue.repository.owner,
+    name: issue.repository.name,
+    number: issue.number ?? parseIssueNumber(issue.identifier),
+  };
+}
 
 const GITHUB_PROVIDER_STRING_KEYS = [
   "project_id",
