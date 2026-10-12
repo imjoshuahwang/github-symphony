@@ -8,6 +8,7 @@ import {
   type WorkflowLifecycleConfig,
   normalizeLabels,
   parseTrackerTimestamp,
+  stateLabel,
 } from "@gh-symphony/core";
 import {
   extractGitHubRateLimits,
@@ -64,6 +65,7 @@ export type GitHubPullRequestMetadata = {
   isDraft: boolean | null;
   merged: boolean | null;
   headRefName: string | null;
+  headRefOid: string | null;
   baseRefName: string | null;
   headRepository: GitHubRepositoryRef | null;
   repository: GitHubRepositoryRef;
@@ -171,6 +173,7 @@ type GraphQLPullRequestNode = {
   isDraft: boolean | null;
   merged: boolean | null;
   headRefName: string | null;
+  headRefOid?: string | null;
   baseRefName: string | null;
   headRepository: {
     name: string;
@@ -786,6 +789,17 @@ export async function requestGithubProjectItemState(
     };
   }
 
+  return runInTokenWriteQueue(queueKey, () =>
+    executeGithubProjectItemStateRequest(config, input, fetchImpl)
+  );
+}
+
+// Serializes tracker writes per token so mutations share one rate-limit lane.
+async function runInTokenWriteQueue<T>(
+  queueKey: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const depth = transitionQueueDepths.get(queueKey) ?? 0;
   transitionQueueDepths.set(queueKey, depth + 1);
   const previous = transitionQueueTails.get(queueKey) ?? Promise.resolve();
   let release!: () => void;
@@ -799,7 +813,7 @@ export async function requestGithubProjectItemState(
 
   await previous.catch(() => undefined);
   try {
-    return await executeGithubProjectItemStateRequest(config, input, fetchImpl);
+    return await run();
   } finally {
     release();
     const nextDepth = (transitionQueueDepths.get(queueKey) ?? 1) - 1;
@@ -810,6 +824,179 @@ export async function requestGithubProjectItemState(
       transitionQueueDepths.set(queueKey, nextDepth);
     }
   }
+}
+
+function enqueueTrackerWrite<T>(
+  config: GitHubTrackerConfig,
+  run: () => Promise<T>
+): Promise<T> {
+  const queueKey = fingerprintGitHubToken(config.token);
+  if (
+    (transitionQueueDepths.get(queueKey) ?? 0) >= MAX_TRANSITION_QUEUE_DEPTH
+  ) {
+    return Promise.reject(
+      new GitHubTrackerError("tracker_transition_queue_full")
+    );
+  }
+  return runInTokenWriteQueue(queueKey, run);
+}
+
+export type GitHubIssueTarget = {
+  owner: string;
+  name: string;
+  number: number;
+};
+
+export function addGithubIssueComment(
+  config: GitHubTrackerConfig,
+  target: GitHubIssueTarget,
+  body: string,
+  fetchImpl: FetchLike = fetch
+): Promise<void> {
+  return enqueueTrackerWrite(config, async () => {
+    await executeGitHubRestRequest(
+      config,
+      "POST",
+      `${issueRestPath(target)}/comments`,
+      { body },
+      fetchImpl
+    );
+  });
+}
+
+/**
+ * Sets `<prefix><slug>` on the issue and removes other `<prefix>*` labels.
+ * GitHub creates a missing label when it is added to an issue.
+ */
+export function setGithubIssueStateLabel(
+  config: GitHubTrackerConfig,
+  target: GitHubIssueTarget,
+  stateName: string,
+  fetchImpl: FetchLike = fetch,
+  prefix = "symphony:"
+): Promise<{ changed: boolean }> {
+  const desired = stateLabel(stateName, prefix).toLowerCase();
+  return enqueueTrackerWrite(config, async () => {
+    const current = (await executeGitHubRestRequest(
+      config,
+      "GET",
+      `${issueRestPath(target)}/labels?per_page=100`,
+      undefined,
+      fetchImpl
+    )) as Array<{ name: string }>;
+    const names = current.map((label) => label.name);
+    // GitHub label names are case-insensitive.
+    const hasDesired = names.some((name) => name.toLowerCase() === desired);
+    const stale = names.filter(
+      (name) =>
+        name.toLowerCase().startsWith(prefix.toLowerCase()) &&
+        name.toLowerCase() !== desired
+    );
+    for (const name of stale) {
+      await executeGitHubRestRequest(
+        config,
+        "DELETE",
+        `${issueRestPath(target)}/labels/${encodeURIComponent(name)}`,
+        undefined,
+        fetchImpl
+      );
+    }
+    if (!hasDesired) {
+      await executeGitHubRestRequest(
+        config,
+        "POST",
+        `${issueRestPath(target)}/labels`,
+        { labels: [desired] },
+        fetchImpl
+      );
+    }
+    return { changed: stale.length > 0 || !hasDesired };
+  });
+}
+
+/**
+ * Squash-merges only if the head is still expectedHeadOid. Auto-merge waits
+ * for required checks; GitHub rejects it for already-clean PRs, so those merge
+ * directly.
+ */
+export function mergeGithubPullRequest(
+  config: GitHubTrackerConfig,
+  input: { pullRequestId: string; expectedHeadOid: string },
+  fetchImpl: FetchLike = fetch
+): Promise<{ method: "auto_merge" | "merge" }> {
+  const variables = {
+    pullRequestId: input.pullRequestId,
+    expectedHeadOid: input.expectedHeadOid,
+  };
+  return enqueueTrackerWrite(config, async () => {
+    try {
+      await executeGraphQLQuery(
+        config,
+        ENABLE_PULL_REQUEST_AUTO_MERGE_MUTATION,
+        variables,
+        fetchImpl
+      );
+      return { method: "auto_merge" as const };
+    } catch (error) {
+      if (
+        !(error instanceof GitHubTrackerQueryError) ||
+        !/clean status/i.test(error.message)
+      ) {
+        throw error;
+      }
+    }
+    await executeGraphQLQuery(
+      config,
+      MERGE_PULL_REQUEST_MUTATION,
+      variables,
+      fetchImpl
+    );
+    return { method: "merge" as const };
+  });
+}
+
+function issueRestPath(target: GitHubIssueTarget): string {
+  return `/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(
+    target.name
+  )}/issues/${target.number}`;
+}
+
+function resolveRestApiBaseUrl(config: GitHubTrackerConfig): string {
+  const graphqlUrl = config.apiUrl ?? DEFAULT_API_URL;
+  // GHES serves GraphQL at /api/graphql and REST at /api/v3.
+  return graphqlUrl.endsWith("/api/graphql")
+    ? graphqlUrl.replace(/\/api\/graphql$/, "/api/v3")
+    : graphqlUrl.replace(/\/graphql$/, "");
+}
+
+async function executeGitHubRestRequest(
+  config: GitHubTrackerConfig,
+  method: "GET" | "POST" | "DELETE",
+  path: string,
+  body: Record<string, unknown> | undefined,
+  fetchImpl: FetchLike
+): Promise<unknown> {
+  const response = await fetchImpl(`${resolveRestApiBaseUrl(config)}${path}`, {
+    method,
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${config.token}`,
+      ...(body ? { "content-type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: buildRequestSignal(config.timeoutMs),
+  });
+  if (!response.ok) {
+    throw new GitHubTrackerHttpError(
+      `GitHub REST ${method} ${path} failed with status ${response.status}`,
+      response.status,
+      await response.text(),
+      extractGitHubRateLimits(response.headers),
+      parseGitHubRetryAfterMs(response.headers?.get?.("retry-after") ?? null)
+    );
+  }
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 async function executeGithubProjectItemStateRequest(
@@ -1825,6 +2012,7 @@ function normalizePullRequestNode(
     isDraft: node.isDraft,
     merged: node.merged,
     headRefName: node.headRefName,
+    headRefOid: node.headRefOid ?? null,
     baseRefName: node.baseRefName,
     headRepository: node.headRepository
       ? normalizeRepositoryRef(node.headRepository)
@@ -2569,6 +2757,7 @@ const PROJECT_ITEMS_QUERY = `
     isDraft
     merged
     headRefName
+    headRefOid
     baseRefName
     headRepository {
       name
@@ -2696,6 +2885,37 @@ const UPDATE_PROJECT_ITEM_STATE_MUTATION = `
       projectV2Item {
         id
       }
+    }
+  }
+`;
+
+const ENABLE_PULL_REQUEST_AUTO_MERGE_MUTATION = `
+  mutation EnablePullRequestAutoMerge(
+    $pullRequestId: ID!
+    $expectedHeadOid: GitObjectID!
+  ) {
+    enablePullRequestAutoMerge(
+      input: {
+        pullRequestId: $pullRequestId
+        mergeMethod: SQUASH
+        expectedHeadOid: $expectedHeadOid
+      }
+    ) {
+      clientMutationId
+    }
+  }
+`;
+
+const MERGE_PULL_REQUEST_MUTATION = `
+  mutation MergePullRequest($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+    mergePullRequest(
+      input: {
+        pullRequestId: $pullRequestId
+        mergeMethod: SQUASH
+        expectedHeadOid: $expectedHeadOid
+      }
+    ) {
+      clientMutationId
     }
   }
 `;
@@ -2845,6 +3065,7 @@ const ISSUE_STATES_BY_IDS_QUERY = `
     isDraft
     merged
     headRefName
+    headRefOid
     baseRefName
     headRepository {
       name
@@ -3086,6 +3307,7 @@ const REPOSITORY_ISSUE_QUERY = `
     isDraft
     merged
     headRefName
+    headRefOid
     baseRefName
     headRepository {
       name

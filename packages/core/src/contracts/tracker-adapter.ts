@@ -105,6 +105,8 @@ export type TrackedPullRequestContext = {
   isDraft?: boolean | null;
   merged?: boolean | null;
   headRefName?: string | null;
+  /** Head commit SHA, used to guard merges against unreviewed pushes. */
+  headRefOid?: string | null;
   baseRefName?: string | null;
   repository?: {
     owner: string;
@@ -337,4 +339,30 @@ export type OrchestratorTrackerAdapter = {
     },
     dependencies?: OrchestratorTrackerDependencies
   ): Promise<TrackerStateResult>;
+  /** Posts a comment on the issue or pull request. */
+  addIssueComment?(
+    project: OrchestratorProjectConfig,
+    issue: TrackedIssue,
+    body: string,
+    dependencies?: OrchestratorTrackerDependencies
+  ): Promise<void>;
+  /**
+   * Mirrors the workflow state as a single prefixed label (see stateLabel),
+   * removing any stale state labels. No-op when already current.
+   */
+  setStateLabel?(
+    project: OrchestratorProjectConfig,
+    issue: TrackedIssue,
+    stateName: string,
+    dependencies?: OrchestratorTrackerDependencies
+  ): Promise<void>;
+  /**
+   * Squash-merges a pull request only if its head is still expectedHeadOid,
+   * via auto-merge when checks are pending or a direct merge when clean.
+   */
+  mergePullRequest?(
+    project: OrchestratorProjectConfig,
+    input: { pullRequestId: string; expectedHeadOid: string },
+    dependencies?: OrchestratorTrackerDependencies
+  ): Promise<{ method: "auto_merge" | "merge" }>;
 };

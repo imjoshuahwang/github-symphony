@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WORKFLOW_LIFECYCLE } from "@gh-symphony/core";
 import {
+  mergeGithubPullRequest,
   requestGithubProjectItemState,
+  setGithubIssueStateLabel,
   resetGitHubRateLimitCacheForTests,
   type GitHubTrackerConfig,
 } from "./adapter.js";
@@ -637,3 +639,115 @@ function jsonResponse(payload: unknown): Response {
     },
   });
 }
+
+describe("setGithubIssueStateLabel", () => {
+  const target = { owner: "acme", name: "app", number: 7 };
+
+  function labelFetch(existing: string[]) {
+    return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify(existing.map((name) => ({ name }))));
+      }
+      return new Response(null, {
+        status: init?.method === "DELETE" ? 204 : 200,
+      });
+    });
+  }
+
+  function writes(fetchImpl: ReturnType<typeof labelFetch>) {
+    return fetchImpl.mock.calls
+      .filter(([, init]) => init?.method !== "GET")
+      .map(([url, init]) => [
+        init?.method,
+        String(url),
+        init?.body ? JSON.parse(String(init.body)) : undefined,
+      ]);
+  }
+
+  it("removes stale state labels and adds the new one", async () => {
+    const fetchImpl = labelFetch(["bug", "symphony:todo"]);
+    await expect(
+      setGithubIssueStateLabel(config, target, "In code review", fetchImpl)
+    ).resolves.toEqual({ changed: true });
+    expect(writes(fetchImpl)).toEqual([
+      [
+        "DELETE",
+        "https://api.github.com/repos/acme/app/issues/7/labels/symphony%3Atodo",
+        undefined,
+      ],
+      [
+        "POST",
+        "https://api.github.com/repos/acme/app/issues/7/labels",
+        { labels: ["symphony:in-code-review"] },
+      ],
+    ]);
+  });
+
+  it("is a no-op when the label is already current", async () => {
+    const fetchImpl = labelFetch(["bug", "symphony:in-code-review"]);
+    await expect(
+      setGithubIssueStateLabel(config, target, "In code review", fetchImpl)
+    ).resolves.toEqual({ changed: false });
+    expect(writes(fetchImpl)).toEqual([]);
+  });
+});
+
+describe("mergeGithubPullRequest", () => {
+  const input = { pullRequestId: "PR_1", expectedHeadOid: "abc123" };
+
+  function graphqlFetch(autoMergeError?: string) {
+    return vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (autoMergeError && body.query.includes("enablePullRequestAutoMerge")) {
+        return new Response(
+          JSON.stringify({ errors: [{ message: autoMergeError }] })
+        );
+      }
+      return new Response(JSON.stringify({ data: {} }));
+    });
+  }
+
+  function sent(fetchImpl: ReturnType<typeof graphqlFetch>) {
+    return fetchImpl.mock.calls.map(([, init]) => {
+      const body = JSON.parse(String(init?.body)) as {
+        query: string;
+        variables: Record<string, string>;
+      };
+      return {
+        mutation: /mutation (\w+)/.exec(body.query)?.[1],
+        variables: body.variables,
+      };
+    });
+  }
+
+  it("enables squash auto-merge guarded by expectedHeadOid", async () => {
+    const fetchImpl = graphqlFetch();
+    await expect(
+      mergeGithubPullRequest(config, input, fetchImpl)
+    ).resolves.toEqual({ method: "auto_merge" });
+    expect(sent(fetchImpl)).toEqual([
+      { mutation: "EnablePullRequestAutoMerge", variables: input },
+    ]);
+  });
+
+  it("merges directly when the pull request is already clean", async () => {
+    const fetchImpl = graphqlFetch(
+      "Pull request Pull request is in clean status"
+    );
+    await expect(
+      mergeGithubPullRequest(config, input, fetchImpl)
+    ).resolves.toEqual({ method: "merge" });
+    expect(sent(fetchImpl)).toEqual([
+      { mutation: "EnablePullRequestAutoMerge", variables: input },
+      { mutation: "MergePullRequest", variables: input },
+    ]);
+  });
+
+  it("does not fall back on other auto-merge errors", async () => {
+    const fetchImpl = graphqlFetch("Head sha didn't match expected head oid");
+    await expect(
+      mergeGithubPullRequest(config, input, fetchImpl)
+    ).rejects.toThrow(/expected head oid/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
